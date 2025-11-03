@@ -5,7 +5,7 @@ import { validateBet } from "@/modules/gameplay/core/restrictions.service";
 import { sql, eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { addWinnings, deductBetAmount } from "./balance-management.service";
-import { gameplayLogger, type LogContext } from "../gameplay-logging.service";
+import { appLogger, createOperationContext, type LogContext } from "@/core/logger/app-logger";
 
 // Interfaces and Schemas
 export interface BetRequest {
@@ -310,7 +310,8 @@ export async function getBetProcessingStats(): Promise<{
 			totalGGR,
 		};
 	} catch (error) {
-		gameplayLogger.error("Failed to get bet processing stats:", error as LogContext);
+		const context = createOperationContext({ domain: "gameplay", operation: "getBetProcessingStats" });
+		appLogger.error("Failed to get bet processing stats:", context, error as Error);
 		return {
 			totalBets: 0,
 			averageProcessingTime: 0,

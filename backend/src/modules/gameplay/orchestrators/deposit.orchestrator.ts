@@ -14,7 +14,7 @@ import { executeCoreDeposit } from "../core/core-deposit.service";
 import { onDepositCompleted as onNotification } from "../listeners/deposit-notification.sender";
 import { onDepositCompleted as onTransaction } from "../listeners/deposit-transaction.logger";
 import { onDepositCompleted as onVip } from "../listeners/deposit-vip.processor";
-import { gameplayLogger, type LogContext } from "../gameplay-logging.service";
+import { appLogger, createOperationContext, type LogContext } from "@/core/logger/app-logger";
 // --- END NEW IMPORTS ---
 
 export enum depositTableStatus {
@@ -75,6 +75,7 @@ export interface DepositCompletionResult {
  * (This function remains unchanged)
  */
 export async function initiateDeposit(request: DepositRequest): Promise<DepositResponse> {
+	const context = createOperationContext({ domain: "gameplay", operation: "initiateDeposit", userId: request.userId });
 	try {
 		const playerBalance = await getDetailedBalance(request.userId);
 		if (!playerBalance) {
@@ -113,7 +114,7 @@ export async function initiateDeposit(request: DepositRequest): Promise<DepositR
 			referenceId,
 		};
 	} catch (error) {
-		gameplayLogger.error("Deposit initiation failed:", error as LogContext);
+		appLogger.error("Deposit initiation failed:", context, error as Error);
 		return {
 			success: false,
 			status: depositTableStatus.FAILED,
@@ -127,6 +128,7 @@ export async function initiateDeposit(request: DepositRequest): Promise<DepositR
  */
 export async function processDepositConfirmation(confirmation: WebhookConfirmation): Promise<DepositCompletionResult> {
 	let coreResult;
+	const context = createOperationContext({ domain: "gameplay", operation: "processDepositConfirmation", userId: confirmation.userId });
 	try {
 		// 1. EXECUTE CORE TRANSACTION
 		coreResult = await executeCoreDeposit(confirmation);
@@ -146,7 +148,7 @@ export async function processDepositConfirmation(confirmation: WebhookConfirmati
 
 		Promise.allSettled(listeners).catch((err) => {
 			// Log if any non-critical side-effect failed
-			console.error("Post-deposit hook failure:", err);
+			appLogger.error("Post-deposit hook failure:", context, err);
 		});
 
 		// 4. RETURN SUCCESS FAST
@@ -162,7 +164,7 @@ export async function processDepositConfirmation(confirmation: WebhookConfirmati
 			},
 		};
 	} catch (error) {
-		console.error("Deposit confirmation processing failed:", error);
+		appLogger.error("Deposit confirmation processing failed:", context, error as Error);
 		return {
 			success: false,
 			depositId: confirmation.transactionId,
@@ -198,6 +200,7 @@ export async function getdepositTabletatus(depositId: string): Promise<{
 	status: depositTableStatus;
 	error?: string;
 } | null> {
+	const context = createOperationContext({ domain: "gameplay", operation: "getdepositTabletatus", depositId });
 	try {
 		const deposit: any = (await db.query.depositTable.findFirst({
 			where: eq(depositTable.id, depositId),
@@ -215,7 +218,7 @@ export async function getdepositTabletatus(depositId: string): Promise<{
 			status: deposit.status as depositTableStatus,
 		};
 	} catch (error) {
-		gameplayLogger.error("Failed to get deposit status:", error as LogContext);
+		appLogger.error("Failed to get deposit status:", context, error as Error);
 		return {
 			status: depositTableStatus.FAILED,
 			error: error instanceof Error ? error.message : "Unknown error",
@@ -236,6 +239,7 @@ export async function getUserDepositHistory(
 	total: number;
 	error?: string;
 }> {
+	const context = createOperationContext({ domain: "gameplay", operation: "getUserDepositHistory", userId });
 	try {
 		const depositTableList = await db.query.depositTable.findMany({
 			where: eq(depositTable.userId, userId),
@@ -256,7 +260,7 @@ export async function getUserDepositHistory(
 			total: total[0].count,
 		};
 	} catch (error) {
-		gameplayLogger.error("Failed to get deposit history:", error as LogContext);
+		appLogger.error("Failed to get deposit history:", context, error as Error);
 		return {
 			deposits: [],
 			total: 0,
@@ -273,6 +277,7 @@ export async function cleanupExpireddepositTable(): Promise<{
 	cancelled: number;
 	error?: string;
 }> {
+	const context = createOperationContext({ domain: "gameplay", operation: "cleanupExpireddepositTable" });
 	try {
 		const expiryHours = 24; // depositTable expire after 24 hours
 		const expiryDate = new Date(Date.now() - expiryHours * 60 * 60 * 1000);
@@ -289,7 +294,7 @@ export async function cleanupExpireddepositTable(): Promise<{
 
 		return { cancelled: result.length || 0 };
 	} catch (error) {
-		gameplayLogger.error("Failed to cleanup expired depositTable:", error as LogContext);
+		appLogger.error("Failed to cleanup expired depositTable:", context, error as Error);
 		return {
 			cancelled: 0,
 			error: error instanceof Error ? error.message : "Unknown error",

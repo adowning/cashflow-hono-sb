@@ -4,7 +4,7 @@ import { operatorTable } from "@/core/database/schema/game";
 import { configurationManager } from "@/shared/config";
 import { and, asc, eq, sql, sum } from "drizzle-orm";
 import { z } from "zod";
-import { gameplayLogger, type LogContext } from "../gameplay-logging.service";
+import { appLogger, createOperationContext, type LogContext } from "@/core/logger/app-logger";
 import * as crypto from "crypto";
 
 const PositiveInt = z.number().int().positive("Amount must be a positive integer (cents).");
@@ -135,7 +135,8 @@ async function deductFromBonusBalance(
 	for (const playerBonus of activeBonuses) {
 		iterationCount++;
 		if (iterationCount > maxIterations) {
-			gameplayLogger.error("Infinite loop prevention: exceeded max iterations in deductFromBonusBalance");
+			const context = createOperationContext({ domain: "gameplay", operation: "deductFromBonusBalance", userId });
+			appLogger.error("Infinite loop prevention: exceeded max iterations in deductFromBonusBalance", context);
 			throw new Error("Potential infinite loop detected in bonus deduction");
 		}
 
@@ -356,7 +357,8 @@ export async function deductBetAmount(request: BalanceDeductionRequest, tx?: any
 			});
 		}
 	} catch (error) {
-		gameplayLogger.error("Balance deduction failed:", error as LogContext);
+		const context = createOperationContext({ domain: "gameplay", operation: "deductBetAmount", userId: request.userId });
+		appLogger.error("Balance deduction failed:", context, error as Error);
 		return {
 			success: false,
 			balanceType: "real",
@@ -379,7 +381,8 @@ export async function addWinnings(
 
 		return creditResult;
 	} catch (error) {
-		gameplayLogger.error("Add winnings failed:", error as LogContext);
+		const context = createOperationContext({ domain: "gameplay", operation: "addWinnings", userId: request.userId });
+		appLogger.error("Add winnings failed:", context, error as Error);
 		return {
 			success: false,
 			newBalance: 0,
@@ -680,7 +683,8 @@ async function debitFromBalance(
 
 		return result;
 	} catch (error) {
-		gameplayLogger.error("Debit operation failed:", error as LogContext);
+		const context = createOperationContext({ domain: "gameplay", operation: "debitFromBalance", userId });
+		appLogger.error("Debit operation failed:", context, error as Error);
 		return {
 			success: false,
 			newBalance: 0,
@@ -767,7 +771,8 @@ async function creditToBalance(
 			});
 		}
 	} catch (error) {
-		gameplayLogger.error("Credit operation failed:", error as LogContext);
+		const context = createOperationContext({ domain: "gameplay", operation: "creditToBalance", userId });
+		appLogger.error("Credit operation failed:", context, error as Error);
 		return {
 			success: false,
 			newBalance: 0,

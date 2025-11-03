@@ -4,7 +4,7 @@ import { db } from "@/core/database/db";
 import { depositTable, userTable, withdrawalTable, type User } from "@/core/database/schema";
 import type { Deposit, Withdrawal } from "@/core/database/schema/finance";
 import { and, eq, gte, sql } from "drizzle-orm";
-import { gameplayLogger, type LogContext } from "./gameplay-logging.service";
+import { appLogger, createOperationContext, type LogContext } from "@/core/logger/app-logger";
 /**
  * Security and fraud prevention service for deposit/withdrawal system
  * Implements velocity checks, suspicious pattern detection, and risk scoring
@@ -102,7 +102,8 @@ export async function performFraudCheck(userId: string): Promise<FraudCheck> {
 			recommendation,
 		};
 	} catch (error) {
-		gameplayLogger.error("Fraud check failed:", error as LogContext);
+		const context = createOperationContext({ domain: "gameplay", operation: "performFraudCheck", userId });
+		appLogger.error("Fraud check failed:", context, error as Error);
 		return {
 			userId,
 			riskScore: 100,
@@ -122,6 +123,7 @@ async function checkRecentActivity(userId: string): Promise<{
 }> {
 	const flags: string[] = [];
 	let riskScore = 0;
+	const context = createOperationContext({ domain: "gameplay", operation: "checkRecentActivity", userId });
 
 	try {
 		const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -172,27 +174,10 @@ async function checkRecentActivity(userId: string): Promise<{
 			});
 
 		// Debug logging to understand the issue
-		gameplayLogger.info("Recent activity check:", {
+		appLogger.info("Recent activity check:", context, {
 			totalTransactions: recentActivity.length,
 			hasRecentActivity: recentActivity.length >= 4,
-			firstActivity: recentActivity[0]
-				? {
-						id: recentActivity[0].id,
-						createdAt: recentActivity[0].createdAt,
-						amount: recentActivity[0].amount,
-					}
-				: null,
-			lastActivity: (() => {
-				const last = recentActivity[recentActivity.length - 1];
-				return last
-					? {
-							id: last.id || "",
-							createdAt: last.createdAt || new Date(),
-							amount: last.amount || 0,
-						}
-					: null;
-			})(),
-		} as unknown as LogContext);
+		});
 
 		if (recentActivity.length >= 4) {
 			// Additional safety check to ensure we have valid data
@@ -208,14 +193,11 @@ async function checkRecentActivity(userId: string): Promise<{
 					riskScore += 30;
 				}
 			} else {
-				gameplayLogger.warn("Recent activity check: Missing createdAt data", {
-					firstActivity: firstActivity ? "has data" : "null/undefined",
-					lastActivity: lastActivity ? "has data" : "null/undefined",
-				} as unknown as LogContext);
+				appLogger.warn("Recent activity check: Missing createdAt data", context);
 			}
 		}
 	} catch (error) {
-		gameplayLogger.error("Recent activity check failed:", error as LogContext);
+		appLogger.error("Recent activity check failed:", context, error as Error);
 		flags.push("Activity check error");
 		riskScore += 10;
 	}
@@ -232,6 +214,7 @@ async function checkVelocityPatterns(userId: string): Promise<{
 }> {
 	const flags: string[] = [];
 	let riskScore = 0;
+	const context = createOperationContext({ domain: "gameplay", operation: "checkVelocityPatterns", userId });
 
 	try {
 		// Check hourly deposit velocity
@@ -263,7 +246,7 @@ async function checkVelocityPatterns(userId: string): Promise<{
 			riskScore += 30;
 		}
 	} catch (error) {
-		gameplayLogger.error("Velocity check failed:", error as LogContext);
+		appLogger.error("Velocity check failed:", context, error as Error);
 		flags.push("Velocity check error");
 		riskScore += 15;
 	}
@@ -376,6 +359,7 @@ async function checkSuspiciousPatterns(userId: string): Promise<{
 }> {
 	const flags: string[] = [];
 	let riskScore = 0;
+	const context = createOperationContext({ domain: "gameplay", operation: "checkSuspiciousPatterns", userId });
 
 	try {
 		// Check for round-number depositTable (common in fraud)
@@ -424,7 +408,7 @@ async function checkSuspiciousPatterns(userId: string): Promise<{
 			riskScore += 10;
 		}
 	} catch (error) {
-		gameplayLogger.error("Suspicious pattern check failed:", error as LogContext);
+		appLogger.error("Suspicious pattern check failed:", context, error as Error);
 		flags.push("Pattern check error");
 		riskScore += 10;
 	}
@@ -436,20 +420,19 @@ async function checkSuspiciousPatterns(userId: string): Promise<{
  * Log security alert for monitoring
  */
 export async function logSecurityAlert(alert: SecurityAlert): Promise<void> {
+	const context = createOperationContext({ domain: "gameplay", operation: "logSecurityAlert", userId: alert.userId });
 	try {
-		gameplayLogger.warn("Security Alert:", {
+		appLogger.warn("Security Alert:", context, {
 			type: alert.type,
 			severity: alert.severity,
-			userId: alert.userId,
 			description: alert.description,
-			timestamp: alert.timestamp,
 			metadata: alert.metadata,
-		} as unknown as LogContext);
+		});
 
 		// In production, this would be stored in a security_alerts table
 		// and could trigger notifications to security team
 	} catch (error) {
-		gameplayLogger.error("Failed to log security alert:", error as LogContext);
+		appLogger.error("Failed to log security alert:", context, error as Error);
 	}
 }
 
@@ -466,6 +449,7 @@ export async function shouldBlockTransaction(
 	alerts: SecurityAlert[];
 }> {
 	const alerts: SecurityAlert[] = [];
+	const context = createOperationContext({ domain: "gameplay", operation: "shouldBlockTransaction", userId });
 
 	try {
 		// Perform fraud check
@@ -548,7 +532,7 @@ export async function shouldBlockTransaction(
 
 		return { blocked: false, alerts };
 	} catch (error) {
-		gameplayLogger.error("Security check failed:", error as LogContext);
+		appLogger.error("Security check failed:", context, error as Error);
 
 		const alert: SecurityAlert = {
 			type: "high_risk",
@@ -606,10 +590,11 @@ export async function addTrustedUser(
 	success: boolean;
 	error?: string;
 }> {
+	const context = createOperationContext({ domain: "gameplay", operation: "addTrustedUser", userId, adminId });
 	try {
-		gameplayLogger.info(
+		appLogger.info(
 			`Admin ${adminId} added trusted user ${userId} for ${durationHours} hours. Reason: ${reason}`,
-			reason as unknown as LogContext,
+			context
 		);
 
 		// In production, this would:
@@ -619,7 +604,7 @@ export async function addTrustedUser(
 
 		return { success: true };
 	} catch (error) {
-		gameplayLogger.error("Failed to add trusted user:", error as LogContext);
+		appLogger.error("Failed to add trusted user:", context, error as Error);
 		return {
 			success: false,
 			error: error instanceof Error ? error.message : "Unknown error",
@@ -639,10 +624,11 @@ export async function blacklistUser(
 	success: boolean;
 	error?: string;
 }> {
+	const context = createOperationContext({ domain: "gameplay", operation: "blacklistUser", userId, adminId });
 	try {
-		gameplayLogger.info(
+		appLogger.info(
 			`Admin ${adminId} blacklisted user ${userId} for ${durationHours} hours. Reason: ${reason}`,
-			reason as unknown as LogContext,
+			context,
 		);
 
 		// In production, this would:
@@ -653,7 +639,7 @@ export async function blacklistUser(
 
 		return { success: true };
 	} catch (error) {
-		gameplayLogger.error("Failed to blacklist user:", error as LogContext);
+		appLogger.error("Failed to blacklist user:", context, error as Error);
 		return {
 			success: false,
 			error: error instanceof Error ? error.message : "Unknown error",
