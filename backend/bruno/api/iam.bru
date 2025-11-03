@@ -1,0 +1,27 @@
+meta {
+  name: iam
+  type: http
+  seq: 1
+}
+
+get {
+  url: http://localhost:3000/api/iam
+  body: json
+  auth: none
+}
+
+auth:basic {
+  username: 
+  password: 
+}
+
+auth:bearer {
+  token: 
+}
+
+body:json {
+  {
+    "email":"test@gmail.com",
+    "password": "Test123!"
+  }
+}

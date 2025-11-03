@@ -1,0 +1,206 @@
+
+@import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
+/*
+Page Background: neutral-950 (#020617)
+Card Background (bg-elevated): neutral-900 (#0f172a)
+Default Text (text-default): neutral-200 (#e2e8f0)
+Main Text (text-highlighted): white or neutral-50 (#f8fafc)
+Muted Text (text-muted): neutral-400 (#94a3b8)
+Button Text (text-inverted on bg-primary): neutral-900 (#0f172a)
+*/
+
+/* 为 html 元素添加默认样式 */
+/* @layer base {
+  [data-theme='light'] {
+  }
+
+  [data-theme='dark'] {
+  }
+} */
+
+:root {
+  /* 卡片边框颜色 */
+  --art-card-border: var(--art-gray-300);
+
+  --art-color: #ffffff;
+
+  /* --a-primary: var(--main-color); */
+  --a-primary: oklch(0.7 0.23 260);
+  --a-secondary: oklch(0.72 0.19 231.6);
+  --a-error: oklch(0.73 0.15 25.3);
+  --a-info: oklch(0.58 0.08 254.1);
+  --a-success: oklch(0.78 0.17 166.1);
+  --a-warning: oklch(0.78 0.14 75.5);
+  --a-danger: oklch(0.68 0.22 25.3);
+
+  --art-gray-100: #f9fafb;
+  --art-gray-200: #f2f4f5;
+  --art-gray-300: #e6eaeb;
+  --art-gray-400: #dbdfe1;
+  --art-gray-500: #949eb7;
+  --art-gray-600: #7987a1;
+  --art-gray-700: #4d5875;
+  --art-gray-800: #383853;
+  --art-gray-900: #323251;
+
+  /* 边框颜色 */
+  --default-border: #e2e8ee;
+  --default-border-dashed: #dbdfe9;
+
+  /* 页面底部背景色 */
+  --default-bg-color: #fafbfc;
+
+  /* 盒子颜色 */
+  --default-box-color: #ffffff;
+}
+
+.dark {
+  --art-color: #020518;
+
+  --art-gray-100: #020518;
+  --art-gray-200: #060f21;
+  --art-gray-300: #0e172b;
+  --art-gray-400: #515169;
+  --art-gray-500: #73738c;
+  --art-gray-600: #8f8fa3;
+  --art-gray-700: #ababba;
+  --art-gray-800: #c7c7d1;
+  --art-gray-900: #e3e3e8;
+
+  --default-border: white;
+  --default-border-dashed: #363843;
+
+  --default-bg-color: #020518;
+
+  --default-box-color: #060f21;
+}
+
+/* 主题类 */
+@theme {
+  /* 盒子颜色（light 白色/ dark 黑色） */
+  --color-box: var(--default-box-color);
+
+  /* System theme color */
+  --color-theme: var(--main-color);
+
+  --color-primary: var(--main-color);
+
+  /* ElementPlus 主题色 */
+  --color-primary: var(--a-primary);
+  --color-secondary: var(--a-secondary);
+  --color-error: var(--a-error);
+  --color-info: var(--a-info);
+  --color-success: var(--a-success);
+  --color-warning: var(--a-warning);
+  --color-danger: var(--a-danger);
+
+  /* 灰度颜色，自动适配暗黑模式 */
+  /* --color-g-50: var(--art-gray-50); */
+  --color-g-100: var(--art-gray-100);
+  --color-g-200: var(--art-gray-200);
+  --color-g-300: var(--art-gray-300);
+  --color-g-400: var(--art-gray-400);
+  --color-g-500: var(--art-gray-500);
+  --color-g-600: var(--art-gray-600);
+  --color-g-700: var(--art-gray-700);
+  --color-g-800: var(--art-gray-800);
+  --color-g-900: var(--art-gray-900);
+  /* --color-g-950: var(--art-gray-950); */
+}
+
+/* 添加自定义工具类 */
+
+/* 自定义圆角 */
+@utility rounded-custom-sm {
+  border-radius: calc(var(--custom-radius) / 2 + 2px);
+}
+
+@layer utilities {
+
+  /* flex 布局 */
+  .flex-c {
+    @apply flex items-center;
+  }
+
+  .flex-b {
+    @apply flex justify-between;
+  }
+
+  .flex-cc {
+    @apply flex items-center justify-center;
+  }
+
+  .flex-cb {
+    @apply flex items-center justify-between;
+  }
+
+  .tad-200 {
+    @apply transition-all duration-200;
+  }
+
+  .tad-300 {
+    @apply transition-all duration-300;
+  }
+
+  /* 边框颜色 */
+  .border-full-d {
+    @apply border border-[var(--default-border)];
+  }
+
+  .border-b-d {
+    @apply border-b border-[var(--default-border)];
+  }
+
+  .border-t-d {
+    @apply border-t border-[var(--default-border)];
+  }
+
+  .border-l-d {
+    @apply border-l border-[var(--default-border)];
+  }
+
+  .border-r-d {
+    @apply border-r border-[var(--default-border)];
+  }
+
+  .c-p {
+    @apply cursor-pointer;
+  }
+
+  /* 滑入动画 */
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+}
+
+/* 添加组件类 */
+@layer components {
+
+  /* art-card header style */
+  .art-card-header {
+    @apply flex justify-between pr-[25px] pb-1;
+
+    .title {
+      h4 {
+        @apply text-lg font-medium text-g-900;
+      }
+
+      p {
+        @apply mt-[3px] text-sm text-g-600;
+
+        span {
+          @apply ml-2 font-medium;
+        }
+      }
+    }
+  }
+}
