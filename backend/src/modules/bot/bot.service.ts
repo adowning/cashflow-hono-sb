@@ -1,17 +1,16 @@
 // src/modules/gameplay/bot.service.ts
 
-import { supabase } from "@/core/supabase/client";
+import { supabase } from "../../core/supabase/client";
 import { and, eq } from "drizzle-orm";
 import { getOrCreateBalance } from "../gameplay/core/balance-management.service";
-
-import { db } from "@/core/database/db";
-import type { BetResult, Game, UserSelect } from "@/core/database/schema";
+import { db } from "../../core/database/db";
+import type { BetResult, Game, UserSelect } from "../../core/database/schema";
 import {
   gameSessionTable,
   gameTable,
   sessionTable,
   userTable,
-} from "@/core/database/schema";
+} from "../../core/database/schema";
 import { v4 as uuidv4 } from "uuid";
 import {
   processBet,
@@ -121,6 +120,12 @@ export interface BalanceResult {
   totalWon?: number;
   totalBonusGranted?: number;
   totalFreeSpinWins?: number;
+}
+
+// Interface for game outcome
+export interface GameOutcome {
+  winAmount: number;
+  gameData: Record<string, any>;
 }
 
 // Interface for bot dependencies
@@ -277,9 +282,9 @@ export class BotService {
         throw new BotInitializationError("Invalid game data received");
       }
 
-      this.gameName = selectedGame.name;
-      this.gameId = selectedGame.id;
-      this.operatorId = selectedGame.operatorId;
+      this.gameName = selectedGame.name as string;
+      this.gameId = selectedGame.id as string;
+      this.operatorId = selectedGame.operatorId as string;
 
       let user: UserSelect | undefined;
       if (userId) {
@@ -492,6 +497,9 @@ export class BotService {
         );
       }
       const finalBalance = balanceResult.balance;
+      if (!finalBalance) {
+        throw new BotOperationError("Balance result is undefined after ensuring sufficient balance");
+      }
 
       // 4. Decide on a bet (ACTOR calls STRATEGY)
       const wagerAmount = botStrategy.getWager(
@@ -502,17 +510,14 @@ export class BotService {
       );
 
       // 5. Simulate the outcome (ACTOR calls STRATEGY)
-      const gameOutcome = botStrategy.getGameOutcome(
-        wagerAmount,
-        this.config.rtpConfig
-      );
+      const gameOutcome = botStrategy.getGameOutcome(wagerAmount);
 
       // 6. Prepare the bet request
       const betRequest: BetRequest = {
         userId: this.userId,
         gameId: this.gameId,
         wagerAmount,
-        sessionId: this.gameSessionId,
+        sessionId: this.gameSessionId || undefined,
         operatorId: "bot",
       };
 
@@ -663,8 +668,8 @@ export class BotService {
         );
       }
 
-      this.gameName = selectedGame.name;
-      this.gameId = selectedGame.id;
+      this.gameName = selectedGame.name as string;
+      this.gameId = selectedGame.id as string;
 
       // Reset play time trackers for new game
       this.sessionStartTime = new Date();
@@ -732,7 +737,7 @@ export class BotService {
       if (!game) {
         throw new BotOperationError(`Game not found: ${this.gameId}`);
       }
-      return game;
+      return game as Game;
     } catch (error) {
       return null;
     }

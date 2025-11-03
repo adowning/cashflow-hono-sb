@@ -62,9 +62,5 @@ export default defineConfig({
     teardownTimeout: 5000, // 5 seconds for teardown
     maxConcurrency: 5, // Limit concurrent tests to avoid overwhelming database
   },
-  resolve: {
-    alias: {
-      '@': '/home/ash/Documents/hono-sb-nuxtdash/backend/src',
-    },
-  },
+
 });

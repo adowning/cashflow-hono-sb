@@ -7,11 +7,8 @@ import
 } from "../core/core-bet.service";
 import { onBetCompleted as onGGR } from "../listeners/bet-ggr.logger";
 import { onBetCompleted as onJackpot } from "../listeners/bet-jackpot.processor";
-import
-{
-  notifyError,
-  onBetCompleted as onNotification,
-} from "../listeners/bet-notification.sender";
+import { notifyError } from "@/shared/notifications.service";
+import { onBetCompleted as onNotification } from "../listeners/bet-notification.sender";
 import { onBetCompleted as onStats } from "../listeners/bet-stats.updater";
 import { onBetCompleted as onTransaction } from "../listeners/bet-transaction.logger";
 import { onBetCompleted as onVIP } from "../listeners/bet-vip.processor";

@@ -277,7 +277,6 @@ export class BunSqliteKeyValue {
       records = this.statements.getItemsStartsWith.all({ key, gte, lt });
     } else if (startsWithOrKeys) {
       // Filtered items (array with keys)
-      //@ts-expect-error
       records = this.db.transaction(() => {
         return (startsWithOrKeys as Key[]).map((key: Key) => {
           const record = this.statements.getItem.get({ key });
@@ -1126,7 +1125,12 @@ export class BunSqliteKeyValue {
     const array = this.get<Array<T>>(key);
     if (array === undefined) return;
     try {
-      return array.at(index);
+      // Handle negative indices by converting to positive
+      if (index < 0) {
+        const actualIndex = array.length + index;
+        return array[actualIndex];
+      }
+      return array[index];
     } catch (error: any) {
       if (error.toString().includes("TypeError")) {
         throw new Error(

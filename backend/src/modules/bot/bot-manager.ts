@@ -1,6 +1,6 @@
 import { BotService, type BotConfig, BotServiceError, BotOperationError } from "./bot.service";
-import { db } from "@/core/database/db";
-import { userTable } from "@/core/database/schema";
+import { db } from "../../core/database/db";
+import { userTable } from "../../core/database/schema";
 import { eq } from "drizzle-orm";
 
 // Custom error types for BotManager
@@ -314,7 +314,8 @@ export class BotManager
 
     console.log(`Stopping ${this.botInstances.size} bot instances...`);
 
-    for (const instance of this.botInstances.values()) {
+    const instances = Array.from(this.botInstances.values());
+    for (const instance of instances) {
       try {
         instance.service.stop();
         instance.status = 'stopped';
@@ -433,7 +434,8 @@ export class BotManager
    */
   updateBotConfig(newConfig: Partial<BotConfig>): void
   {
-    for (const instance of this.botInstances.values()) {
+    const instances = Array.from(this.botInstances.values());
+    for (const instance of instances) {
       try {
         instance.service.updateConfig(newConfig);
       } catch (error) {

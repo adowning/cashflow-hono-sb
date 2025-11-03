@@ -6,34 +6,34 @@
     "jsxImportSource": "hono/jsx",
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "target": "es2022",
+    "target": "ESNext",
     "verbatimModuleSyntax": true,
     "allowJs": true,
     "resolveJsonModule": true,
     "moduleDetection": "force",
     /* Strictness */
-    "noUncheckedIndexedAccess": true,
+    "noUncheckedIndexedAccess": false,
     "outDir": "dist",
     /* If NOT transpiling with TypeScript: */
     "moduleResolution": "Bundler",
-    "module": "ESNext",
+    "module": "Preserve",
     "composite": true,
     "noEmit": true,
     /* If your code doesn't run in the DOM: */
-    "lib": [
-      "es2022"
-    ],
+    "lib": ["ESNext"],
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"]
     },
-    "types": [
-      "vitest/importMeta",
-      "vitest/globals"
-    ],
+    "types": ["vitest/importMeta", "vitest/globals", "bun-types"],
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
   },
-  "exclude": [
-    "./node_modules/**"
-  ]
+  "exclude": ["./node_modules/**", "dist", "drizzle", "docs", "bruno"],
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*"],
+  "ts-node": {
+    "esm": true
+  }
 }

@@ -1,4 +1,4 @@
-import { BunSqliteKeyValue } from "@/core/cache";
+import { BunSqliteKeyValue } from "../../core/cache";
 import type { MiddlewareHandler } from "hono";
 
 let sessionCache: BunSqliteKeyValue;

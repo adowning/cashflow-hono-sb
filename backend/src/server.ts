@@ -1,14 +1,11 @@
-import { startManufacturedGameplay } from "@/modules/bot/bot.service";
+import { startManufacturedGameplay } from "./modules/bot/bot.service";
 import { showRoutes } from "hono/dev";
 import app from "./app";
 import { updateWithAllGameSessionsToCompleted } from "./core/database/db";
+import { wsRouter } from "./app.ws";
 
 const port = 3000;
 
-// serve({
-// 	fetch: app.fetch,
-// 	port,
-// });
 export const CORS_HEADERS = {
   headers: {
     "Access-Control-Allow-Origin": "*",
@@ -16,47 +13,23 @@ export const CORS_HEADERS = {
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
   },
 };
-// const server = Bun.serve({
-//   port,
-//   async fetch(req, server) {
-//     console.log(req.url);
-//     return app.fetch(req, server);
-//   },
-//   //   websocket: wsRouter.websocket,
-// });
 
-// const server = Bun.serve<Client, Record<`/${string}`, Response>>({
 const server = Bun.serve({
   port,
   websocket: wsRouter.websocket,
-  //  {
-  //   async message(ws, msg) {
-  //     ctx.server = server;
-  //     onMessage(ws, msg, ctx);
-  //   },
-  //   async open(ws) {
-  //     ctx.server = server;
-  //     onOpen(ws, ctx, broadcastTopic);
-  //   },
-  //   async close(ws) {
-  //     ctx.server = server;
-  //     onClose(ws, ctx);
-  //   },
-  // },
   async fetch(req, server) {
+    const url = new URL(req.url);
     // Handle CORS preflight requests
     if (req.method === "OPTIONS") {
       const res = new Response("Departed", CORS_HEADERS);
       return res;
     }
-    if (req.url == "/ws") {
+    if (url.pathname == "/ws") {
       // WS Upgrade
-      // server.upgrade(req, websocketUpgrade());
-
+      // server.upgrade(req, upgrade());
       // fallback
-      return new Response("404!");
     }
-    app.fetch(req, server);
+    return app.fetch(req, server);
   },
 });
 showRoutes(app);
@@ -71,5 +44,7 @@ process.on("SIGINT", () => {
   process.exit();
 });
 
-await updateWithAllGameSessionsToCompleted();
-startManufacturedGameplay();
+// Initialize the application
+updateWithAllGameSessionsToCompleted().then(() => {
+  startManufacturedGameplay();
+});

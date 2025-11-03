@@ -2,16 +2,15 @@
  * Bot Wallet Service
  * Handles all financial operations for a bot, ensuring sufficient balance.
  */
-import { getOrCreateBalance } from "./balance-management.service";
-import type { BalanceResult } from "./bot.service"; // You may want to move this type to a shared types file
-import
-{
+import { getOrCreateBalance } from "../gameplay/core/balance-management.service";
+import type { BalanceResult } from "./bot.service";
+import {
     initiateDeposit,
     PaymentMethod,
     processDepositConfirmation,
     type DepositRequest,
     type WebhookConfirmation
-} from "./deposit.service";
+} from "../gameplay/orchestrators/deposit.orchestrator";
 
 // Interface for deposit operation result
 export interface DepositOperationResult

@@ -4,13 +4,9 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <> */
 
 import { db } from "@/core/database/db";
-import
-{
-  depositTable,
-  type Deposit,
-} from "@/core/database/schema";
+import { depositTable, type Deposit } from "@/core/database/schema";
 import { and, eq, sql } from "drizzle-orm";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 import { getDetailedBalance } from "../core/balance-management.service";
 
 // --- NEW IMPORTS ---
@@ -20,8 +16,7 @@ import { onDepositCompleted as onTransaction } from "../listeners/deposit-transa
 import { onDepositCompleted as onVip } from "../listeners/deposit-vip.processor";
 // --- END NEW IMPORTS ---
 
-export enum depositTableStatus
-{
+export enum depositTableStatus {
   PENDING = "PENDING",
   PROCESSING = "PROCESSING",
   COMPLETED = "COMPLETED",
@@ -30,15 +25,13 @@ export enum depositTableStatus
   EXPIRED = "EXPIRED",
 }
 
-export enum PaymentMethod
-{
+export enum PaymentMethod {
   CASHAPP = "CASHAPP",
   INSTORE_CASH = "INSTORE_CASH",
   INSTORE_CARD = "INSTORE_CARD",
 }
 
-export interface DepositRequest
-{
+export interface DepositRequest {
   userId: string;
   amount: number; // Amount in cents
   bonusAmount: number; // Amount in cents
@@ -48,18 +41,16 @@ export interface DepositRequest
   metadata?: Record<string, unknown>;
 }
 
-export interface DepositResponse
-{
+export interface DepositResponse {
   success: boolean;
   depositId?: string;
-  status: DepositTableStatus;
+  status: depositTableStatus;
   instructions?: string;
   referenceId?: string;
   error?: string;
 }
 
-export interface WebhookConfirmation
-{
+export interface WebhookConfirmation {
   transactionId: string;
   amount: number;
   senderInfo?: string;
@@ -68,8 +59,7 @@ export interface WebhookConfirmation
   userId: string;
 }
 
-export interface DepositCompletionResult
-{
+export interface DepositCompletionResult {
   success: boolean;
   depositId: string;
   amount: number;
@@ -79,21 +69,19 @@ export interface DepositCompletionResult
   error?: string;
 }
 
-
 /**
  * Initiate a new deposit request
  * (This function remains unchanged)
  */
 export async function initiateDeposit(
   request: DepositRequest
-): Promise<DepositResponse>
-{
+): Promise<DepositResponse> {
   try {
     const playerBalance = await getDetailedBalance(request.userId);
     if (!playerBalance) {
       return {
         success: false,
-        status: DepositTableStatus.FAILED,
+        status: depositTableStatus.FAILED,
         error: "Player balance not found",
       };
     }
@@ -102,8 +90,7 @@ export async function initiateDeposit(
       .toString(36)
       .substr(2, 9)}`;
 
-    const depositId = await db.transaction(async (tx) =>
-    {
+    const depositId = await db.transaction(async (tx) => {
       const deposit = await tx
         .insert(depositTable)
         .values({
@@ -111,7 +98,7 @@ export async function initiateDeposit(
           userId: request.userId,
           amount: request.amount,
           bonusAmount: request.bonusAmount,
-          status: DepositTableStatus.PENDING,
+          status: depositTableStatus.PENDING,
           note: request.note || referenceId,
         })
         .returning({ id: depositTable.id });
@@ -128,7 +115,7 @@ export async function initiateDeposit(
     return {
       success: true,
       depositId,
-      status: DepositTableStatus.PENDING,
+      status: depositTableStatus.PENDING,
       instructions,
       referenceId,
     };
@@ -136,7 +123,7 @@ export async function initiateDeposit(
     console.error("Deposit initiation failed:", error);
     return {
       success: false,
-      status: DepositTableStatus.FAILED,
+      status: depositTableStatus.FAILED,
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -148,9 +135,7 @@ export async function initiateDeposit(
  */
 export async function processDepositConfirmation(
   confirmation: WebhookConfirmation
-): Promise<DepositCompletionResult>
-{
-
+): Promise<DepositCompletionResult> {
   let coreResult;
   try {
     // 1. EXECUTE CORE TRANSACTION
@@ -168,13 +153,9 @@ export async function processDepositConfirmation(
     payload.vipPointsAdded = vipResult.xpGained;
 
     // Run other listeners in parallel (fire-and-forget)
-    const otherListeners = [
-      onTransaction(payload),
-      onNotification(payload),
-    ];
+    const otherListeners = [onTransaction(payload), onNotification(payload)];
 
-    Promise.allSettled(otherListeners).catch(err =>
-    {
+    Promise.allSettled(otherListeners).catch((err) => {
       // Log if any non-critical side-effect failed
       console.error("Post-deposit hook failure:", err);
     });
@@ -188,7 +169,6 @@ export async function processDepositConfirmation(
         xpGained: vipResult.xpGained,
       },
     };
-
   } catch (error) {
     console.error("Deposit confirmation processing failed:", error);
     return {
@@ -208,8 +188,7 @@ async function getPaymentInstructions(
   method: PaymentMethod,
   referenceId: string,
   amount: number
-): Promise<string>
-{
+): Promise<string> {
   const amountInDollars = (amount / 100).toFixed(2);
   switch (method) {
     case PaymentMethod.CASHAPP:
@@ -229,10 +208,9 @@ async function getPaymentInstructions(
  */
 export async function getdepositTabletatus(depositId: string): Promise<{
   deposit?: Deposit;
-  status: DepositTableStatus;
+  status: depositTableStatus;
   error?: string;
-} | null>
-{
+} | null> {
   try {
     const deposit: any = (await db.query.depositTable.findFirst({
       where: eq(depositTable.id, depositId),
@@ -240,19 +218,19 @@ export async function getdepositTabletatus(depositId: string): Promise<{
 
     if (!deposit) {
       return {
-        status: DepositTableStatus.FAILED,
+        status: depositTableStatus.FAILED,
         error: "Deposit not found",
       };
     }
 
     return {
       deposit,
-      status: deposit.status as DepositTableStatus,
+      status: deposit.status as depositTableStatus,
     };
   } catch (error) {
     console.error("Failed to get deposit status:", error);
     return {
-      status: DepositTableStatus.FAILED,
+      status: depositTableStatus.FAILED,
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -270,8 +248,7 @@ export async function getUserDepositHistory(
   deposits: Deposit[];
   total: number;
   error?: string;
-}>
-{
+}> {
   try {
     const depositTableList = await db.query.depositTable.findMany({
       where: eq(depositTable.userId, userId),
@@ -308,8 +285,7 @@ export async function getUserDepositHistory(
 export async function cleanupExpireddepositTable(): Promise<{
   cancelled: number;
   error?: string;
-}>
-{
+}> {
   try {
     const expiryHours = 24; // depositTable expire after 24 hours
     const expiryDate = new Date(Date.now() - expiryHours * 60 * 60 * 1000);
@@ -317,7 +293,7 @@ export async function cleanupExpireddepositTable(): Promise<{
     const result: Deposit[] = await db
       .update(depositTable)
       .set({
-        status: DepositTableStatus.EXPIRED,
+        status: depositTableStatus.EXPIRED,
         updatedAt: new Date(),
       })
       .where(

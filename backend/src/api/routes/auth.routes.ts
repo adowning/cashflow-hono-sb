@@ -1,8 +1,8 @@
-import { zValidator } from "@/api/middlewares/zodValidator.middleware";
-import { supabase } from "@/core/supabase/client";
+import { zValidator } from "../middlewares/zodValidator.middleware";
+import { supabase } from "../../core/supabase/client";
 
-import authMiddleware from "@/api/middlewares/auth.middleware";
-import { type AppBindings } from "@/shared/types";
+import authMiddleware from "../middlewares/auth.middleware";
+import { type AppBindings } from "../../shared/types";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";

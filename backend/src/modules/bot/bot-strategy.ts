@@ -3,9 +3,9 @@
  * Handles all decision-making logic for a bot, such as wager calculation,
  * game simulation, and game-changing decisions.
  */
-import { db } from "@/core/database/db";
-import { gameTable, type Game } from "@/core/database/schema";
-import { configurationManager } from "@/shared/config";
+import { db } from "../../core/database/db";
+import { gameTable, type Game } from "../../core/database/schema";
+import { configurationManager } from "../../shared/config";
 import { eq } from "drizzle-orm";
 import type { BalanceResult, BotConfig, GameOutcome } from "./bot.service";
 
@@ -61,8 +61,8 @@ export function getWager(
 ): number
 {
     let validBets: number[] = [];
-    if (game.goldsvetData?.bet) {
-        const betStrings = (game.goldsvetData.bet as string)
+    if (game.goldsvetData && (game.goldsvetData as any).bet) {
+        const betStrings = ((game.goldsvetData as any).bet as string)
             .split(",")
             .map((betStr: string) => parseFloat(betStr.trim()));
 

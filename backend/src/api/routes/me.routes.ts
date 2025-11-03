@@ -1,5 +1,5 @@
-import authMiddleware from "@/api/middlewares/auth.middleware";
-import type { AppBindings } from "@/shared/types";
+import authMiddleware from "../middlewares/auth.middleware";
+import type { AppBindings } from "../../shared/types";
 import { Hono } from "hono";
 
 const meRoutes = new Hono<{ Variables: AppBindings }>()

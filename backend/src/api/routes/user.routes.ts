@@ -1,12 +1,12 @@
-import { db } from "@/core/database/db";
-import { userTable } from "@/core/database/schema/user";
-import authMiddleware from "@/api/middlewares/auth.middleware";
+import { db } from "../../core/database/db";
+import { userTable } from "../../core/database/schema/user";
+import authMiddleware from "../middlewares/auth.middleware";
 import type {
     AppBindings,
     PaginatedResponse,
     PaginationMeta,
     PaginationParams,
-} from "@/shared/types";
+} from "../../shared/types";
 import { and, count, eq } from "drizzle-orm";
 import { Hono } from "hono";
 

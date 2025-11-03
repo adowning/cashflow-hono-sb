@@ -9,3 +9,6 @@ editor = "code"
 # default on Windows
 shell = "bun"
 bun = true
+
+[paths]
+"@/*" = ["./src/*"]
