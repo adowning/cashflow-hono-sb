@@ -193,11 +193,7 @@ export async function executeCoreBet(betRequest: BetRequest, gameOutcome: GameOu
 		throw new Error("User not found");
 	}
 
-	const validation = await validateBet(
-		user,
-		validatedBetRequest.wagerAmount,
-		validatedBetRequest.gameId,
-	);
+	const validation = await validateBet(user, validatedBetRequest.wagerAmount, validatedBetRequest.gameId);
 
 	if (!validation.valid) {
 		throw new Error(validation.reason || "Bet validation failed");

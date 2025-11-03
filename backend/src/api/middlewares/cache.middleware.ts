@@ -5,9 +5,9 @@ let sessionCache: RedisClient;
 let gameSessionCache: RedisClient;
 
 export const initializeDataCache = () => {
-  const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
-  sessionCache = new RedisClient(redisUrl);
-  gameSessionCache = new RedisClient(redisUrl);
+	const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+	sessionCache = new RedisClient(redisUrl);
+	gameSessionCache = new RedisClient(redisUrl);
 };
 
 // export const cacheMiddleware = (options?: any): MiddlewareHandler => {
@@ -20,9 +20,9 @@ export const initializeDataCache = () => {
 // };
 
 const cache: MiddlewareHandler = async (c, next) => {
-  c.set("sessionCache", sessionCache);
-  c.set("gameSessionCache", gameSessionCache);
-  await next();
+	c.set("sessionCache", sessionCache);
+	c.set("gameSessionCache", gameSessionCache);
+	await next();
 };
 
 export default cache;

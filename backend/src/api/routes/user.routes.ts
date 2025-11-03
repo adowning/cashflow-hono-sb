@@ -4,12 +4,7 @@ import authMiddleware from "../middlewares/auth.middleware";
 import type { AppBindings, PaginatedResponse, PaginationMeta, PaginationParams } from "../../shared/types";
 import { and, count, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import {
-	createPaginatedQuery,
-	createPaginationMeta,
-	parsePaginationParams,
-	validatePaginationParams,
-} from "../utils/pagination";
+import { createPaginatedQuery, getPaginationParams } from "../utils/pagination";
 
 const userRoutes = new Hono<{ Variables: AppBindings }>()
 	.use("*", authMiddleware)
@@ -29,12 +24,9 @@ const userRoutes = new Hono<{ Variables: AppBindings }>()
 			}
 
 			// Parse and validate pagination parameters
-			const url = new URL(c.req.url);
-			const paginationParams = parsePaginationParams(url.searchParams);
-			const validation = validatePaginationParams(paginationParams);
-
-			if (!validation.isValid) {
-				return c.json({ error: validation.error }, 400);
+			const { error, params: paginationParams } = getPaginationParams(c);
+			if (error) {
+				return error;
 			}
 
 			const whereConditions = eq(userTable.operatorId, currentUser.operatorId);

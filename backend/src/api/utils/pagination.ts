@@ -1,6 +1,7 @@
 import type { PaginationMeta, PaginationParams } from "../../shared/types";
 import { count, type SQL } from "drizzle-orm";
 import { db } from "@/core/database/db";
+import type { Context } from "hono";
 
 // Pagination helper functions
 export const parsePaginationParams = (
@@ -74,4 +75,18 @@ export const createPaginatedQuery = async <T>(
 		data,
 		pagination: paginationMeta,
 	};
+};
+
+export const getPaginationParams = (
+	c: Context,
+): { error?: any; params?: PaginationParams & { category?: string; query?: string } } => {
+	const url = new URL(c.req.url);
+	const paginationParams = parsePaginationParams(url.searchParams);
+	const validation = validatePaginationParams(paginationParams);
+
+	if (!validation.isValid) {
+		return { error: c.json({ error: validation.error }, 400) };
+	}
+
+	return { params: paginationParams };
 };

@@ -10,14 +10,14 @@ import type { RedisClient } from "bun";
 // import { CourseTagSchema } from "../prisma/generated/types";
 
 export interface AppBindings {
-  // Variables: {
-  logger: PinoLogger;
-  user: UserWithBalance;
-  authUser: AuthUser;
-  sessionCache: RedisClient;
-  gameSessionCache: RedisClient;
-  supabase: SupabaseClient;
-  // };
+	// Variables: {
+	logger: PinoLogger;
+	user: UserWithBalance;
+	authUser: AuthUser;
+	sessionCache: RedisClient;
+	gameSessionCache: RedisClient;
+	supabase: SupabaseClient;
+	// };
 }
 
 export { type AppType };
@@ -28,34 +28,34 @@ export { type AppType };
  * Includes optional fields for completeness.
  */
 export const ZGetUserSchema = z.object({
-  id: z.string(),
+	id: z.string(),
 });
 export const ZGetAllUsersSchema = z.object({
-  query: z.string().optional(),
-  page: z.coerce.number().min(1).optional().default(1),
-  perPage: z.coerce.number().min(1).optional().default(4),
+	query: z.string().optional(),
+	page: z.coerce.number().min(1).optional().default(1),
+	perPage: z.coerce.number().min(1).optional().default(4),
 });
 export type TGetUserType = z.infer<typeof ZGetUserSchema>;
 export type TGetAllUsersType = z.infer<typeof ZGetAllUsersSchema>;
 
 // Pagination interfaces and types
 export interface PaginationMeta {
-  page: number;
-  perPage: number;
-  total: number;
-  totalPages: number;
-  hasNextPage: boolean;
-  hasPrevPage: boolean;
+	page: number;
+	perPage: number;
+	total: number;
+	totalPages: number;
+	hasNextPage: boolean;
+	hasPrevPage: boolean;
 }
 
 export interface PaginatedResponse<T> {
-  data: T[];
-  pagination: PaginationMeta;
+	data: T[];
+	pagination: PaginationMeta;
 }
 
 export interface PaginationParams {
-  page?: number;
-  perPage?: number;
+	page?: number;
+	perPage?: number;
 }
 
 // export const ZGetUserSchema = z.object({

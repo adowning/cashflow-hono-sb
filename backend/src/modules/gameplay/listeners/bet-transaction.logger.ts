@@ -1,41 +1,46 @@
-// src/modules/gameplay/listeners/deposit-transaction.logger.ts
+// src/modules/gameplay/listeners/bet-transaction.logger.ts
 
 import { logTransaction } from "@/shared/transaction.service";
 
 /**
- * Logs the completed deposit to the main transaction ledger.
+ * Logs the completed bet to the main transaction ledger.
+ * The transaction.service.ts will split this into BET and WIN records.
  */
 export async function onBetCompleted(payload: any) {
-  const {
-    userId,
-    depositId,
-    amount,
-    realBalanceBefore,
-    realBalanceAfter,
-    bonusBalanceBefore,
-    bonusBalanceAfter,
-    // vipPointsAdded, // <-- REMOVED
-  } = payload;
+	const {
+		userId,
+		betId,
+		wagerAmount,
+		winAmount,
+		realBalanceBefore,
+		realBalanceAfter,
+		bonusBalanceBefore,
+		bonusBalanceAfter,
+		vipPointsAdded,
+		ggrContribution,
+		jackpotContribution,
+		processingTime,
+	} = payload;
 
-  try {
-    await logTransaction({
-      userId: userId,
-      operatorId: "79032f3f-7c4e-4575-abf9-4298ad3e9d1a", // Or pass operatorId in payload
-      relatedId: depositId,
-      wagerAmount: 0,
-      winAmount: amount, // A deposit is a credit
-      realBalanceBefore: realBalanceBefore,
-      realBalanceAfter: realBalanceAfter,
-      bonusBalanceBefore: bonusBalanceBefore,
-      bonusBalanceAfter: bonusBalanceAfter,
-      status: "COMPLETED",
-      type: "DEPOSIT",
-      vipPointsAdded: 0, // <-- Set to 0 initially. onVip will update this.
-    });
-  } catch (error) {
-    console.error(
-      `Failed to log deposit transaction for user ${userId}:`,
-      error
-    );
-  }
+	try {
+		await logTransaction({
+			userId: userId,
+			operatorId: "79032f3f-7c4e-4575-abf9-4298ad3e9d1a", // Or pass operatorId in payload
+			relatedId: betId,
+			wagerAmount: wagerAmount,
+			winAmount: winAmount,
+			realBalanceBefore: realBalanceBefore,
+			realBalanceAfter: realBalanceAfter,
+			bonusBalanceBefore: bonusBalanceBefore,
+			bonusBalanceAfter: bonusBalanceAfter,
+			status: "COMPLETED",
+			type: "BET",
+			vipPointsAdded: vipPointsAdded || 0,
+			ggrContribution: ggrContribution || 0,
+			jackpotContribution: jackpotContribution || 0,
+			processingTime: processingTime,
+		});
+	} catch (error) {
+		console.error(`Failed to log bet transaction for user ${userId}:`, error);
+	}
 }
