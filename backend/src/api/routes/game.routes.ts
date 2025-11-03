@@ -5,15 +5,15 @@ import type { AppBindings, PaginatedResponse, PaginationMeta, PaginationParams }
 import { and, count, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { createPaginatedQuery, getPaginationParams } from "../utils/pagination";
+import { appLogger, createOperationContext } from "@/core/logger/app-logger";
 
 const gameRoutes = new Hono<{ Variables: AppBindings }>()
 	.use("*", authMiddleware)
 	.get("/", async (c) => {
-		const logger = c.get("logger");
+		const currentUser = c.get("user");
+		const context = createOperationContext({ domain: 'api', operation: 'getGames', userId: currentUser?.id });
 
 		try {
-			const currentUser = c.get("user");
-
 			if (!currentUser) {
 				return c.json({ error: "User not authenticated" }, 401);
 			}
@@ -65,7 +65,7 @@ const gameRoutes = new Hono<{ Variables: AppBindings }>()
 
 			const paginatedResult = await createPaginatedQuery(gameTable, dataFetcher, paginationParams, whereConditions);
 
-			logger.info(`Filtered games by category: ${category}, found: ${paginatedResult.data.length} games`);
+			appLogger.info(`Filtered games by category: ${category}, found: ${paginatedResult.data.length} games`, context);
 
 			const response: PaginatedResponse<(typeof paginatedResult.data)[0]> = {
 				data: paginatedResult.data,
@@ -74,7 +74,7 @@ const gameRoutes = new Hono<{ Variables: AppBindings }>()
 
 			return c.json(response);
 		} catch (error) {
-			logger.error("Error fetching games:", error as any);
+			appLogger.error("Error fetching games:", context, error as Error);
 			return c.json({ error: "Failed to fetch games" }, 500);
 		}
 	})
@@ -82,12 +82,11 @@ const gameRoutes = new Hono<{ Variables: AppBindings }>()
 
 	// *** This dynamic route now comes AFTER /balances ***
 	.get("/:id", async (c) => {
-		const logger = c.get("logger");
+		const currentUser = c.get("user");
+		const gameId = c.req.param("id");
+		const context = createOperationContext({ domain: 'api', operation: 'getGameById', userId: currentUser?.id, gameId });
 
 		try {
-			const currentUser = c.get("user");
-			const gameId = c.req.param("id");
-
 			if (!currentUser) {
 				return c.json({ error: "Game not authenticated" }, 401);
 			}
@@ -119,7 +118,7 @@ const gameRoutes = new Hono<{ Variables: AppBindings }>()
 
 			return c.json({ data: games[0] });
 		} catch (error) {
-			logger.error("Error fetching game:", error as any);
+			appLogger.error("Error fetching game:", context, error as Error);
 			return c.json({ error: "Failed to fetch game" }, 500);
 		}
 	});

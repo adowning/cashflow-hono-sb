@@ -18,17 +18,17 @@ import { configurationManager } from "@/shared/config";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { createOperationContext, jackpotLogger } from "./jackpot-logging.service";
+import { appLogger, createOperationContext } from "@/core/logger/app-logger";
 import {
-	type JackpotErrorContext,
+	type LogContext as JackpotErrorContext,
 	categorizeError,
 	createConcurrencyError,
 	createDatabaseError,
 	createInsufficientFundsError,
 	createSystemError,
 	createValidationError,
-	JackpotError,
-} from "./jackpot-errors";
+	AppError as JackpotError,
+} from "@/core/errors/app-errors";
 
 // ========================================
 // VALIDATION SCHEMAS (Zod)
@@ -274,7 +274,7 @@ class ConcurrencySafeDB {
 			} catch (error) {
 				if (error instanceof JackpotError) {
 					if (error.isRetryable() && attempt < maxRetries) {
-						jackpotLogger.warn(`Retrying operation ${operation} on ${type}`, context, { attempt });
+						appLogger.warn(`Retrying operation ${operation} on ${type}`, context, { attempt });
 						await new Promise((res) => setTimeout(res, RETRY_DELAY_MS * Math.pow(2, attempt)));
 						continue;
 					}
@@ -282,7 +282,7 @@ class ConcurrencySafeDB {
 				}
 
 				if (isConcurrencyError(error) && attempt < maxRetries) {
-					jackpotLogger.warn(`Retrying operation ${operation} on ${type} due to concurrency issue`, context, {
+					appLogger.warn(`Retrying operation ${operation} on ${type} due to concurrency issue`, context, {
 						attempt,
 						error: (error as Error).message,
 					});
@@ -415,7 +415,7 @@ class ConcurrencySafeDB {
 			} catch (error) {
 				if (error instanceof JackpotError) {
 					if (error.isRetryable() && attempt < maxRetries) {
-						jackpotLogger.warn(`Retrying batch operation ${operation}`, context, { attempt });
+						appLogger.warn(`Retrying batch operation ${operation}`, context, { attempt });
 						await new Promise((res) => setTimeout(res, RETRY_DELAY_MS * Math.pow(2, attempt)));
 						continue;
 					}
@@ -423,7 +423,7 @@ class ConcurrencySafeDB {
 				}
 
 				if (isConcurrencyError(error) && attempt < maxRetries) {
-					jackpotLogger.warn(`Retrying batch operation ${operation} due to concurrency issue`, context, {
+					appLogger.warn(`Retrying batch operation ${operation} due to concurrency issue`, context, {
 						attempt,
 						error: (error as Error).message,
 					});
@@ -463,7 +463,7 @@ class JackpotManager {
 		if (this.initialized) {
 			return;
 		}
-		const context = createOperationContext({ operation: "ensureInitialized" });
+		const context = createOperationContext({ operation: "ensureInitialized", domain: "jackpot" });
 
 		try {
 			await db.transaction(async (tx) => {
@@ -513,7 +513,7 @@ class JackpotManager {
 			});
 
 			this.initialized = true;
-			jackpotLogger.info("Jackpot pools initialized successfully", context);
+			appLogger.info("Jackpot pools initialized successfully", context);
 		} catch (error) {
 			throw categorizeError(error as Error, context, "SYSTEM");
 		}
@@ -538,6 +538,7 @@ class JackpotManager {
 	): Promise<void> {
 		const context = createOperationContext({
 			operation: "updateConfig",
+			domain: "jackpot",
 			...adminContext,
 		});
 		const validatedConfig = validateJackpotConfigUpdate(newConfig, context);
@@ -579,7 +580,7 @@ class JackpotManager {
 			},
 			context,
 		);
-		jackpotLogger.config("Jackpot configuration updated", context, {
+		appLogger.config("Jackpot configuration updated", context, {
 			affectedTypes: affectedDbTypes,
 		});
 	}
@@ -590,7 +591,7 @@ class JackpotManager {
 	 */
 	async getPool(type: JackpotType): Promise<JackpotPool> {
 		await this.ensureInitialized();
-		const context = createOperationContext({ operation: "getPool", type });
+		const context = createOperationContext({ operation: "getPool", domain: "jackpot", type });
 
 		try {
 			const pools = await db.select().from(jackpotTable).where(eq(jackpotTable.jackpotType, type));
@@ -612,7 +613,7 @@ class JackpotManager {
 	 */
 	async getAllPools(): Promise<Record<JackpotType, JackpotPool>> {
 		await this.ensureInitialized();
-		const context = createOperationContext({ operation: "getAllPools" });
+		const context = createOperationContext({ operation: "getAllPools", domain: "jackpot" });
 
 		try {
 			const pools = await db
@@ -644,7 +645,7 @@ class JackpotManager {
 		contributions: Record<JackpotType, number>;
 		totalContribution: number;
 	}> {
-		const context = createOperationContext({ operation: "contribute", gameId });
+		const context = createOperationContext({ operation: "contribute", domain: "jackpot", gameId });
 		const { gameId: validatedGameId, wagerAmount: validatedWagerAmount } = validateJackpotContributionRequest(
 			{ gameId, wagerAmount },
 			context,
@@ -737,6 +738,7 @@ class JackpotManager {
 	): Promise<{ actualWinAmount: number; remainingAmount: number }> {
 		const context = createOperationContext({
 			operation: "processWin",
+			domain: "jackpot",
 			type,
 			gameId,
 			userId,
@@ -798,7 +800,7 @@ class JackpotManager {
 				};
 				await tx.insert(jackpotWinHistoryTable).values(winRecord);
 
-				jackpotLogger.info(`Jackpot win processed: ${validatedType} - ${actualWinAmount} cents`, context);
+				appLogger.info(`Jackpot win processed: ${validatedType} - ${actualWinAmount} cents`, context);
 
 				return {
 					actualWinAmount,
@@ -858,6 +860,7 @@ export async function processJackpotContribution(
 ): Promise<JackpotContributionResult> {
 	const context = createOperationContext({
 		operation: "processJackpotContribution",
+		domain: "jackpot",
 		gameId,
 	});
 	try {
@@ -868,7 +871,7 @@ export async function processJackpotContribution(
 		};
 	} catch (error) {
 		const jackpotError = categorizeError(error as Error, context);
-		jackpotLogger.error("Failed to process jackpot contribution", context, jackpotError);
+		appLogger.error("Failed to process jackpot contribution", context, jackpotError);
 		return {
 			success: false,
 			// --- REFACTORED: Use uppercase enum keys ---
@@ -891,6 +894,7 @@ export async function processJackpotWin(
 ): Promise<JackpotWinResult> {
 	const context = createOperationContext({
 		operation: "processJackpotWin",
+		domain: "jackpot",
 		type,
 		gameId,
 		userId,
@@ -903,7 +907,7 @@ export async function processJackpotWin(
 		};
 	} catch (error) {
 		const jackpotError = categorizeError(error as Error, context);
-		jackpotLogger.error("Failed to process jackpot win", context, jackpotError);
+		appLogger.error("Failed to process jackpot win", context, jackpotError);
 		return {
 			success: false,
 			actualWinAmount: 0,
@@ -919,7 +923,7 @@ export async function getJackpotPools(): Promise<Record<JackpotType, JackpotPool
 	try {
 		return await jackpotManager.getAllPools();
 	} catch (error) {
-		jackpotLogger.error("Failed to get all jackpot pools", createOperationContext({}), error);
+		appLogger.error("Failed to get all jackpot pools", createOperationContext({ domain: "jackpot" }), error);
 		return {
 			MINOR: {} as JackpotPool,
 			MAJOR: {} as JackpotPool,
@@ -935,7 +939,7 @@ export async function getJackpotPool(type: JackpotType): Promise<JackpotPool> {
 	try {
 		return await jackpotManager.getPool(type);
 	} catch (error) {
-		jackpotLogger.error(`Failed to get jackpot pool: ${type}`, createOperationContext({ type }), error);
+		appLogger.error(`Failed to get jackpot pool: ${type}`, createOperationContext({ domain: "jackpot", type }), error);
 		throw error;
 	}
 }
@@ -946,13 +950,13 @@ export async function getJackpotPool(type: JackpotType): Promise<JackpotPool> {
 export async function updateJackpotConfig(
 	config: Partial<JackpotConfig>,
 ): Promise<{ success: boolean; error?: string }> {
-	const context = createOperationContext({ operation: "updateJackpotConfig" });
+	const context = createOperationContext({ operation: "updateJackpotConfig", domain: "jackpot" });
 	try {
 		await jackpotManager.updateConfig(config, context);
 		return { success: true };
 	} catch (error) {
 		const jackpotError = categorizeError(error as Error, context);
-		jackpotLogger.error("Failed to update jackpot config", context, jackpotError);
+		appLogger.error("Failed to update jackpot config", context, jackpotError);
 		return {
 			success: false,
 			error: jackpotError.message,
@@ -967,7 +971,7 @@ export async function getJackpotStatistics() {
 	try {
 		return await jackpotManager.getStatistics();
 	} catch (error) {
-		jackpotLogger.error("Failed to get jackpot statistics", createOperationContext({}), error);
+		appLogger.error("Failed to get jackpot statistics", createOperationContext({ domain: "jackpot" }), error);
 		return {
 			pools: {},
 			totalContributions: 0,

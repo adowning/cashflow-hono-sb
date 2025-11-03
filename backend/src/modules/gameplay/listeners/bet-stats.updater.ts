@@ -1,15 +1,16 @@
 import { db, gameTable } from "@/core/database/db";
 import { eq } from "drizzle-orm";
-import { gameplayLogger, type LogContext } from "../gameplay-logging.service";
+import { appLogger, createOperationContext, type LogContext } from "@/core/logger/app-logger";
 
 export async function onBetCompleted(payload: any) {
 	const { gameId, userId, wagerAmount, winAmount } = payload;
+	const context = createOperationContext({ domain: "gameplay", operation: "onBetCompletedUpdateStats", gameId, userId });
 	try {
 		const game = await db.query.gameTable.findFirst({
 			where: (gameTable, { eq }) => eq(gameTable.id, gameId),
 		});
 		if (!game) {
-			console.warn(`Game ${gameId} not found for statistics update.`);
+			appLogger.warn(`Game ${gameId} not found for statistics update.`, context);
 			return;
 		}
 
@@ -22,7 +23,7 @@ export async function onBetCompleted(payload: any) {
 				currentPlayers = Array.isArray(parsedPlayers) ? parsedPlayers.filter((p) => typeof p === "string") : [];
 			}
 		} catch (error) {
-			console.warn("Failed to parse distinctPlayers, using empty array:", error as LogContext);
+			appLogger.warn("Failed to parse distinctPlayers, using empty array:", context, { error: (error as Error).message });
 			currentPlayers = [];
 		}
 
@@ -44,10 +45,10 @@ export async function onBetCompleted(payload: any) {
 			const timeDiffMs = now.getTime() - startedAt.getTime();
 			totalMinutesPlayed = Math.max(0, Math.floor(timeDiffMs / (1000 * 60)));
 			if (timeDiffMs < 0) {
-				console.warn(`[totalMinutesPlayed] Game ${gameId} has startedAt in the future: ${startedAt.toISOString()}`);
+				appLogger.warn(`[totalMinutesPlayed] Game ${gameId} has startedAt in the future: ${startedAt.toISOString()}`, context);
 			}
 		} else {
-			console.warn(`[totalMinutesPlayed] Game ${gameId} has null startedAt, using createdAt as fallback`);
+			appLogger.warn(`[totalMinutesPlayed] Game ${gameId} has null startedAt, using createdAt as fallback`, context);
 			const fallbackStartedAt = game.createdAt ? new Date(game.createdAt) : new Date();
 			const now = new Date();
 			const timeDiffMs = now.getTime() - fallbackStartedAt.getTime();
@@ -70,6 +71,6 @@ export async function onBetCompleted(payload: any) {
 			})
 			.where(eq(gameTable.id, gameId));
 	} catch (error) {
-		gameplayLogger.error(`Failed to update game ${gameId} statistics:`, error as LogContext);
+		appLogger.error(`Failed to update game ${gameId} statistics:`, context, error as Error);
 	}
 }

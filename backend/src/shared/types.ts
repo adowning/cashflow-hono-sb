@@ -11,7 +11,6 @@ import type { RedisClient } from "bun";
 
 export interface AppBindings {
 	// Variables: {
-	logger: PinoLogger;
 	user: UserWithBalance;
 	authUser: AuthUser;
 	sessionCache: RedisClient;

@@ -1,9 +1,9 @@
 /**
- * Structured logging service for gameplay operations
+ * Structured logging service for application operations
  * Provides comprehensive audit trails, performance monitoring, and correlation tracking
  */
 
-import { GameplayError, getErrorSeverity } from "./gameplay-errors";
+import { AppError, getErrorSeverity, type LogContext } from "@/core/errors/app-errors";
 
 // ========================================
 // LOG TYPES AND INTERFACES
@@ -11,28 +11,15 @@ import { GameplayError, getErrorSeverity } from "./gameplay-errors";
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR" | "FATAL";
 
-export interface LogContext {
+export interface AppLogEntry {
+	timestamp: string;
+	level: LogLevel;
+	category: "AUDIT" | "ERROR" | "PERFORMANCE" | "TRANSACTION" | "CONFIG" | "HEALTH";
 	operationId: string;
 	correlationId?: string;
 	userId?: string;
 	gameId?: string;
-	requestId?: string;
-	sessionId?: string;
-	timestamp: Date;
-	duration?: number;
-	retryCount?: number;
-	version?: number;
-	[key: string]: any;
-}
-
-export interface GameplayLogEntry {
-	timestamp: string;
-	level: LogLevel;
-	category: "AUDIT" | "ERROR" | "PERFORMANCE" | "TRANSACTION" | "CONFIG" | "HEALTH";
-	operationId?: string;
-	correlationId?: string;
-	userId?: string;
-	gameId?: string;
+	domain?: string;
 	message: string;
 	details?: Record<string, any>;
 	duration?: number;
@@ -72,33 +59,35 @@ export function generateOperationId(): string {
  */
 function createLogEntry(
 	level: LogLevel,
-	category: GameplayLogEntry["category"],
+	category: AppLogEntry["category"],
 	message: string,
-	context?: LogContext,
+	context: LogContext,
 	details?: Record<string, any>,
 	error?: any,
 	duration?: number,
-): GameplayLogEntry {
-	const entry: GameplayLogEntry = {
+): AppLogEntry {
+	const entry: AppLogEntry = {
 		timestamp: new Date().toISOString(),
 		level,
 		category,
-		operationId: context?.operationId,
-		correlationId: context?.correlationId,
-		userId: context?.userId,
-		gameId: context?.gameId,
+		operationId: context.operationId,
+		correlationId: context.correlationId,
+		userId: context.userId,
+		gameId: context.gameId,
+		domain: context.domain,
 		message,
 		details,
 		duration,
 	};
 
 	if (error) {
-		if (error instanceof GameplayError) {
+		if ((error as AppError).isAppError) {
+			const appError = error as AppError;
 			entry.error = {
-				code: error.code,
-				category: error.category,
-				severity: getErrorSeverity(error),
-				stack: error.stack,
+				code: appError.code,
+				category: appError.category,
+				severity: getErrorSeverity(appError),
+				stack: appError.stack,
 			};
 		} else if (error instanceof Error) {
 			entry.error = {
@@ -120,14 +109,14 @@ function createLogEntry(
 /**
  * Format log entry as JSON string for structured logging
  */
-function formatAsJson(entry: GameplayLogEntry): string {
+function formatAsJson(entry: AppLogEntry): string {
 	return JSON.stringify(entry);
 }
 
 /**
  * Format log entry for console output with colors and formatting
  */
-function formatForConsole(entry: GameplayLogEntry): string {
+function formatForConsole(entry: AppLogEntry): string {
 	const timestamp = entry.timestamp;
 	const level = entry.level.padEnd(5);
 	const category = entry.category.padEnd(12);
@@ -143,6 +132,10 @@ function formatForConsole(entry: GameplayLogEntry): string {
 
 	if (entry.userId) {
 		formatted += ` | User: ${entry.userId}`;
+	}
+
+	if (entry.domain) {
+		formatted += ` | Domain: ${entry.domain}`;
 	}
 
 	if (entry.duration !== undefined) {
@@ -164,10 +157,10 @@ function formatForConsole(entry: GameplayLogEntry): string {
 }
 
 // ========================================
-// GAMEPLAY LOGGING SERVICE
+// APP LOGGING SERVICE
 // ========================================
 
-class GameplayLogger {
+class AppLogger {
 	private isDevelopment: boolean;
 	private performanceMetrics: Map<string, number[]> = new Map();
 
@@ -176,7 +169,7 @@ class GameplayLogger {
 	}
 
 	/**
-	 * Log audit entry for gameplay operations
+	 * Log audit entry for application operations
 	 */
 	audit(message: string, context: LogContext, details?: Record<string, any>): void {
 		const entry = createLogEntry("INFO", "AUDIT", message, context, details);
@@ -186,7 +179,7 @@ class GameplayLogger {
 	/**
 	 * Log error with full context and error details
 	 */
-	error(message: string, context?: LogContext, error?: any, details?: Record<string, any>): void {
+	error(message: string, context: LogContext, error?: any, details?: Record<string, any>): void {
 		const entry = createLogEntry("ERROR", "ERROR", message, context, details, error);
 		this.writeLog(entry);
 	}
@@ -302,34 +295,26 @@ class GameplayLogger {
 	}
 
 	/**
-	 * Log gameplay contribution
+	 * Log a domain-specific event
 	 */
-	//   contribution(
-	//     action: "CONTRIBUTION" | "WIN" | "RESET",
-	//     context: LogContext,
-	//     amount: number,
-	//     success: boolean = true,
-	//     details?: Record<string, any>
-	//   ): void {
-	//     const contributionDetails = {
-	//       action,
-	//       amount,
-	//       success,
-	//       poolAmount: details?.poolAmount,
-	//       totalContributions: details?.totalContributions,
-	//       ...details,
-	//     };
+	event(
+		action: string,
+		context: LogContext,
+		amount: number,
+		success: boolean = true,
+		details?: Record<string, any>,
+	): void {
+		const eventDetails = {
+			action,
+			amount,
+			success,
+			...details,
+		};
 
-	//     const level: LogLevel = success ? "INFO" : "ERROR";
-	//     const entry = createLogEntry(
-	//       level,
-	//       "AUDIT",
-	//       `Gameplay ${action}: ${amount} cents`,
-	//       context,
-	//       contributionDetails
-	//     );
-	//     this.writeLog(entry);
-	//   }
+		const level: LogLevel = success ? "INFO" : "ERROR";
+		const entry = createLogEntry(level, "AUDIT", `Event ${action}: ${amount}`, context, eventDetails);
+		this.writeLog(entry);
+	}
 
 	/**
 	 * Log concurrency operation
@@ -358,7 +343,7 @@ class GameplayLogger {
 	/**
 	 * Write log entry to output
 	 */
-	private writeLog(entry: GameplayLogEntry): void {
+	private writeLog(entry: AppLogEntry): void {
 		const jsonLog = formatAsJson(entry);
 
 		if (this.isDevelopment) {
@@ -368,7 +353,7 @@ class GameplayLogger {
 			switch (entry.level) {
 				case "ERROR":
 				case "FATAL":
-					gameplayLogger.error(consoleFormatted);
+					console.error(consoleFormatted);
 					break;
 				case "WARN":
 					console.warn(consoleFormatted);
@@ -442,7 +427,7 @@ class GameplayLogger {
 	/**
 	 * Get all performance statistics
 	 */
-	getAllPerformanceStats(): Record<string, ReturnType<GameplayLogger["getPerformanceStats"]>> {
+	getAllPerformanceStats(): Record<string, ReturnType<AppLogger["getPerformanceStats"]>> {
 		const stats: Record<string, any> = {};
 
 		for (const [operation] of this.performanceMetrics) {
@@ -461,7 +446,7 @@ class GameplayLogger {
 }
 
 // Export singleton instance
-export const gameplayLogger = new GameplayLogger();
+export const appLogger = new AppLogger();
 
 // ========================================
 // PERFORMANCE MONITORING DECORATORS
@@ -487,7 +472,7 @@ export function logPerformance(operation: string, context?: Partial<LogContext>)
 			};
 
 			try {
-				gameplayLogger.info(`Starting ${operation}`, methodContext, {
+				appLogger.info(`Starting ${operation}`, methodContext, {
 					method: propertyKey,
 					args: args.length,
 				});
@@ -495,16 +480,16 @@ export function logPerformance(operation: string, context?: Partial<LogContext>)
 				const result = await originalMethod.apply(this, args);
 				const duration = Date.now() - startTime;
 
-				gameplayLogger.performance(operation, methodContext, duration, {
+				appLogger.performance(operation, methodContext, duration, {
 					method: propertyKey,
 					args: args.length,
 				});
 
 				return result;
-			} catch (error) {
+_			} catch (error) {
 				const duration = Date.now() - startTime;
 
-				gameplayLogger.error(`${operation} failed after ${duration}ms`, methodContext, error, {
+				appLogger.error(`${operation} failed after ${duration}ms`, methodContext, error, {
 					method: propertyKey,
 					args: args.length,
 					duration,
@@ -523,14 +508,15 @@ export function logPerformance(operation: string, context?: Partial<LogContext>)
 // ========================================
 
 /**
- * Log gameplay operation to audit trail
+ * Log an application operation to the audit trail
  */
-export function logGameplayAudit(
+export function logAppAudit(
 	operation: string,
 	context: LogContext,
 	data: {
 		userId?: string;
 		gameId?: string;
+		domain?: string;
 		amount?: number;
 		oldValue?: any;
 		newValue?: any;
@@ -544,11 +530,11 @@ export function logGameplayAudit(
 		timestamp: new Date().toISOString(),
 	};
 
-	gameplayLogger.audit(`Gameplay ${operation}`, context, auditDetails);
+	appLogger.audit(`App ${operation}`, context, auditDetails);
 
 	// Also log to error channel if failed
 	if (!data.success && data.error) {
-		gameplayLogger.error(`Gameplay ${operation} failed`, context, data.error, auditDetails);
+		appLogger.error(`App ${operation} failed`, context, data.error, auditDetails);
 	}
 }
 

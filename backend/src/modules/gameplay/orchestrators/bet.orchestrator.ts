@@ -6,7 +6,7 @@ import { notifyError, onBetCompleted as onNotification } from "../listeners/bet-
 import { onBetCompleted as onStats } from "../listeners/bet-stats.updater";
 import { onBetCompleted as onTransaction } from "../listeners/bet-transaction.logger";
 import { onBetCompleted as onVIP } from "../listeners/bet-vip.processor";
-import { gameplayLogger, type LogContext } from "../gameplay-logging.service";
+import { appLogger, createOperationContext, type LogContext } from "@/core/logger/app-logger";
 
 /**
  * Bet processing orchestration service
@@ -86,7 +86,8 @@ export async function processBet(betRequest: BetRequest, gameOutcome: GameOutcom
 		};
 	} catch (error) {
 		const processingTime = Date.now() - startTime;
-		gameplayLogger.error("Bet processing failed:", error as LogContext);
+		const context = createOperationContext({ domain: "gameplay", operation: "processBet", userId: betRequest.userId, gameId: betRequest.gameId });
+		appLogger.error("Bet processing failed", context, error as Error);
 
 		// Send error notification to user
 		await notifyError(betRequest.userId, error instanceof Error ? error.message : "Bet processing failed");

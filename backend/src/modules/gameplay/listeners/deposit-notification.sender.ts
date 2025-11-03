@@ -1,21 +1,16 @@
 import { notifyBalanceChange } from "@/shared/notifications.service";
-import { gameplayLogger, type LogContext } from "../gameplay-logging.service";
+import { appLogger, createOperationContext, type LogContext } from "@/core/logger/app-logger";
 
 /**
  * Sends a real-time notification to the user about their completed deposit.
  */
 export async function onDepositCompleted(payload: any) {
 	const { userId, amount, realBalanceAfter, bonusBalanceAfter } = payload;
+	const context = createOperationContext({ domain: "gameplay", operation: "onDepositCompleted", userId });
 
 	try {
-		await notifyBalanceChange(userId, {
-			realBalance: realBalanceAfter,
-			bonusBalance: bonusBalanceAfter,
-			totalBalance: realBalanceAfter + bonusBalanceAfter,
-			changeAmount: amount,
-			changeType: "deposit",
-		});
+		await notifyBalanceChange(userId, realBalanceAfter - amount, realBalanceAfter, amount);
 	} catch (error) {
-		gameplayLogger.error(`Failed to send deposit notification to user ${userId}:`, error as LogContext);
+		appLogger.error(`Failed to send deposit notification to user ${userId}:`, context, error as Error);
 	}
 }
