@@ -5,15 +5,15 @@ import type { AppBindings, PaginatedResponse, PaginationMeta, PaginationParams }
 import { and, count, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { createPaginatedQuery, getPaginationParams } from "../utils/pagination";
+import { appLogger, createOperationContext } from "@/core/logger/app-logger";
 
 const userRoutes = new Hono<{ Variables: AppBindings }>()
 	.use("*", authMiddleware)
 	.get("/", async (c) => {
-		const logger = c.get("logger");
+		const currentUser = c.get("user");
+		const context = createOperationContext({ domain: 'api', operation: 'getUsers', userId: currentUser?.id });
 
 		try {
-			const currentUser = c.get("user");
-
 			if (!currentUser) {
 				return c.json({ error: "User not authenticated" }, 401);
 			}
@@ -60,17 +60,16 @@ const userRoutes = new Hono<{ Variables: AppBindings }>()
 
 			return c.json(response);
 		} catch (error) {
-			logger.error("Error fetching users:", error as any);
+			appLogger.error("Error fetching users:", context, error as Error);
 			return c.json({ error: "Failed to fetch users" }, 500);
 		}
 	})
 	// *** FIX: Moved this route before /:id ***
 	.get("/balances", async (c) => {
-		const logger = c.get("logger");
+		const currentUser = c.get("user");
+		const context = createOperationContext({ domain: 'api', operation: 'getUserBalances', userId: currentUser?.id });
 
 		try {
-			const currentUser = c.get("user");
-
 			if (!currentUser) {
 				return c.json({ error: "User not authenticated" }, 401);
 			}
@@ -81,12 +80,9 @@ const userRoutes = new Hono<{ Variables: AppBindings }>()
 			}
 
 			// Parse and validate pagination parameters
-			const url = new URL(c.req.url);
-			const paginationParams = parsePaginationParams(url.searchParams);
-			const validation = validatePaginationParams(paginationParams);
-
-			if (!validation.isValid) {
-				return c.json({ error: validation.error }, 400);
+			const { error, params: paginationParams } = getPaginationParams(c);
+			if (error) {
+				return error;
 			}
 
 			const whereConditions = eq(userTable.operatorId, currentUser.operatorId);
@@ -111,18 +107,17 @@ const userRoutes = new Hono<{ Variables: AppBindings }>()
 
 			return c.json(paginatedResponse);
 		} catch (error) {
-			logger.error("Error fetching users with balances:", error as any);
+			appLogger.error("Error fetching users with balances:", context, error as Error);
 			return c.json({ error: "Failed to fetch users with balances" }, 500);
 		}
 	})
 	// *** This dynamic route now comes AFTER /balances ***
 	.get("/:id", async (c) => {
-		const logger = c.get("logger");
+		const currentUser = c.get("user");
+		const userId = c.req.param("id");
+		const context = createOperationContext({ domain: 'api', operation: 'getUserById', userId: currentUser?.id, requestedId: userId });
 
 		try {
-			const currentUser = c.get("user");
-			const userId = c.req.param("id");
-
 			if (!currentUser) {
 				return c.json({ error: "User not authenticated" }, 401);
 			}
@@ -155,7 +150,7 @@ const userRoutes = new Hono<{ Variables: AppBindings }>()
 
 			return c.json({ data: users[0] });
 		} catch (error) {
-			logger.error("Error fetching user:", error as any);
+			appLogger.error("Error fetching user:", context, error as Error);
 			return c.json({ error: "Failed to fetch user" }, 500);
 		}
 	});

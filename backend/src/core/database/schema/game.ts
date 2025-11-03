@@ -2,7 +2,7 @@ import { boolean, index, integer, jsonb, pgTable, real, text, unique, uuid } fro
 import { createInsertSchema, createSelectSchema, createUpdateSchema } from "drizzle-zod";
 import type { z } from "zod";
 import { timestampColumns } from "./custom-types";
-import { gameCategoriesEnum, gameStatusEnum, jackpotGroupEnum } from "./enums";
+import { gameCategoriesEnum, gameStatusEnum, jackpotTypeEnum } from "./enums";
 
 export const operatorTable = pgTable("operators", {
 	id: uuid("id").defaultRandom().primaryKey().notNull(),
@@ -58,7 +58,7 @@ export const gameTable = pgTable(
 		minBet: integer("min_bet").default(100),
 		maxBet: integer("max_bet").default(100000),
 		isFeatured: boolean("is_featured").default(false),
-		jackpotGroup: jackpotGroupEnum("jackpot_group"),
+		jackpotGroup: jackpotTypeEnum("jackpot_group"),
 		goldsvetData: jsonb("goldsvet_data"),
 	},
 	(t) => [

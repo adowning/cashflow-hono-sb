@@ -8,6 +8,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { endTime, startTime } from "hono/timing";
 import { z } from "zod";
+import { appLogger, createOperationContext } from "@/core/logger/app-logger";
 
 const CREATING_BOTS = false;
 
@@ -22,9 +23,8 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 			}),
 		),
 		async (c) => {
-			const logger = c.get("logger");
-
 			const { username, password } = c.req.valid("json");
+			const context = createOperationContext({ domain: 'api', operation: 'signUp', username });
 			const { data, error } = await supabase.auth.signUp({
 				email: `${username}-${new Date().getTime()}@cashflowcasino.com`,
 				password,
@@ -37,7 +37,7 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 			});
 
 			if (error || !data?.user?.email) {
-				logger.info(error as any);
+				appLogger.info("Sign up error", context, { error: error?.message });
 				throw new Error(error?.message || "Error while signing up", {
 					cause: error,
 				});
@@ -45,7 +45,7 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 
 			// const user = await db.insert(userTable).values(dbUser).returning();
 			if (error || !data || !data.session) {
-				logger.error("Error while signing in", error as any);
+				appLogger.error("Error while signing in", context, error);
 				throw new HTTPException(401, {
 					message: (error as any)?.message || "Authentication failed",
 				});
@@ -82,8 +82,8 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 			}),
 		),
 		async (c) => {
-			const logger = c.get("logger");
 			const { email, password } = c.req.valid("json");
+			const context = createOperationContext({ domain: 'api', operation: 'signIn', email });
 
 			const response = await supabase.auth.signInWithPassword({
 				email,
@@ -91,7 +91,7 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 			});
 
 			if (response.error || !response.data || !response.data.session) {
-				logger.error("Error while signing in", response.error as any);
+				appLogger.error("Error while signing in", context, response.error);
 				throw new HTTPException(401, {
 					message: response.error?.message || "Authentication failed",
 				});
@@ -129,8 +129,8 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 			}),
 		),
 		async (c) => {
-			const logger = c.get("logger");
 			const { token, provider, accessToken } = c.req.valid("json");
+			const context = createOperationContext({ domain: 'api', operation: 'signInWithProvider', provider });
 			// start a new timer
 			startTime(c, "supabase.auth.signInWithProvider");
 			const { data, error } = await supabase.auth.signInWithIdToken({
@@ -142,7 +142,7 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 			endTime(c, "supabase.auth.signInWithProvider");
 
 			if (error as any) {
-				logger.error("Error while signing in with Provider ", error as any);
+				appLogger.error("Error while signing in with Provider", context, error);
 				throw new HTTPException(401, { message: error?.message });
 			}
 
@@ -168,7 +168,7 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 		},
 	)
 	.get("/refresh", async (c) => {
-		const logger = c.get("logger");
+		const context = createOperationContext({ domain: 'api', operation: 'refresh' });
 		const refresh_token = getCookie(c, "refresh_token");
 		if (!refresh_token) {
 			throw new HTTPException(403, { message: "No refresh token" });
@@ -179,7 +179,7 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 		});
 
 		if (error as any) {
-			logger.error("Error while refreshing token", error as any);
+			appLogger.error("Error while refreshing token", context, error);
 			throw new HTTPException(403, {
 				message: error?.message || "Token refresh failed",
 			});
@@ -199,8 +199,8 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 		return c.json(data.user);
 	})
 	.get("/get-user", authMiddleware, async (c) => {
-		const logger = c.get("logger");
 		const user = c.get("user");
+		const context = createOperationContext({ domain: 'api', operation: 'getUser', userId: user?.id });
 		// const sessionCache = c.get('sessionCache')
 		if (!user) {
 			throw new HTTPException(403, { message: "No user" });
@@ -216,7 +216,7 @@ const authRoutes = new Hono<{ Variables: AppBindings }>()
 		});
 
 		if (error as any) {
-			logger.error("Error while refreshing token", error as any);
+			appLogger.error("Error while refreshing token", context, error);
 			throw new HTTPException(403, {
 				message: error?.message || "Token refresh failed",
 			});

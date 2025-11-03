@@ -3,7 +3,7 @@
  * Handles all notification logic for the application
  */
 
-import { logger } from "./logger";
+import { appLogger, createOperationContext } from "@/core/logger/app-logger";
 
 export interface NotificationData {
 	userId: string;
@@ -19,10 +19,13 @@ export async function notifyBalanceChange(
 	newBalance: number,
 	changeAmount: number,
 ): Promise<void> {
+  const context = createOperationContext({
+    domain: 'notification',
+    operation: 'notifyBalanceChange',
+    userId,
+  });
 	try {
-		logger.info({
-			msg: "Balance change notification processed",
-			userId,
+		appLogger.info("Balance change notification processed", context, {
 			oldBalance,
 			newBalance,
 			changeAmount,
@@ -34,29 +37,25 @@ export async function notifyBalanceChange(
 		// - Email/SMS
 		// - In-app notifications
 	} catch (error) {
-		logger.error({
-			msg: "Failed to send balance change notification",
-			userId,
-			error: error instanceof Error ? error.message : error,
-		});
+		appLogger.error("Failed to send balance change notification", context, error as Error);
 	}
 }
 
 export async function notifyDeposit(userId: string, amount: number, method: string): Promise<void> {
+    const context = createOperationContext({
+        domain: 'notification',
+        operation: 'notifyDeposit',
+        userId,
+      });
 	try {
-		logger.info({
-			msg: "Deposit notification processed",
-			userId,
+		appLogger.info("Deposit notification processed", context, {
 			amount,
 			method,
 		});
 	} catch (error) {
-		logger.error({
-			msg: "Failed to send deposit notification",
-			userId,
+		appLogger.error("Failed to send deposit notification", context, error as Error, {
 			amount,
 			method,
-			error: error instanceof Error ? error.message : error,
 		});
 	}
 }
@@ -65,43 +64,43 @@ export async function notifyError(
 	userId: string,
 	errorCode: string,
 	errorMessage: string,
-	context?: Record<string, any>,
+	errorContext?: Record<string, any>,
 ): Promise<void> {
+    const context = createOperationContext({
+        domain: 'notification',
+        operation: 'notifyError',
+        userId,
+      });
 	try {
-		logger.info({
-			msg: "Error notification processed",
-			userId,
+		appLogger.info("Error notification processed", context, {
 			errorCode,
 			errorMessage,
-			context,
+			errorContext,
 		});
 	} catch (error) {
-		logger.error({
-			msg: "Failed to send error notification",
-			userId,
+		appLogger.error("Failed to send error notification", context, error as Error, {
 			errorCode,
 			errorMessage,
-			error: error instanceof Error ? error.message : error,
 		});
 	}
 }
 
 export async function sendNotification(notification: NotificationData): Promise<void> {
+    const context = createOperationContext({
+        domain: 'notification',
+        operation: 'sendNotification',
+        userId: notification.userId,
+      });
 	try {
-		logger.info({
-			msg: "Notification sent",
+		appLogger.info("Notification sent", context, {
 			notificationType: notification.type,
-			userId: notification.userId,
 			title: notification.title,
 			message: notification.message,
 			data: notification.data,
 		});
 	} catch (error) {
-		logger.error({
-			msg: "Failed to send notification",
+		appLogger.error("Failed to send notification", context, error as Error, {
 			notificationType: notification.type,
-			userId: notification.userId,
-			error: error instanceof Error ? error.message : error,
 		});
 	}
 }

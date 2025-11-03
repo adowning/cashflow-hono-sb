@@ -3,7 +3,7 @@
  * Handles GGR calculations and logging
  */
 
-import { logger } from "./logger";
+import { appLogger, createOperationContext } from "@/core/logger/app-logger";
 
 export async function logGGRContribution(
 	gameId: string,
@@ -12,13 +12,16 @@ export async function logGGRContribution(
 	userId: string,
 ): Promise<void> {
 	const ggr = totalBetAmount - totalWonAmount;
+  const context = createOperationContext({
+    domain: 'ggr',
+    operation: 'logGGRContribution',
+    userId,
+    gameId,
+  });
 
 	try {
 		// Log GGR contribution to analytics system
-		logger.info({
-			msg: "GGR contribution logged",
-			gameId,
-			userId,
+		appLogger.info("GGR contribution logged", context, {
 			ggr,
 			totalBetAmount,
 			totalWonAmount,
@@ -27,13 +30,9 @@ export async function logGGRContribution(
 		// Here you would typically store this in a database or send to analytics
 		// For now, just logging it
 	} catch (error) {
-		logger.error({
-			msg: "Failed to log GGR contribution",
-			error: error instanceof Error ? error.message : error,
-			gameId,
-			userId,
-			ggr,
-		});
+		appLogger.error("Failed to log GGR contribution", context, error as Error, {
+      ggr,
+    });
 		throw error;
 	}
 }
