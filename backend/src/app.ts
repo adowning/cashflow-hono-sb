@@ -13,6 +13,7 @@ import authRoutes from "./api/routes/auth.routes";
 import gameRoutes from "./api/routes/game.routes";
 import meRoutes from "./api/routes/me.routes";
 import userRoutes from "./api/routes/user.routes";
+import type { AppBindings } from "./shared/types";
 
 // type AuthContext = {
 //   authUser?: AuthUser;
@@ -20,27 +21,27 @@ import userRoutes from "./api/routes/user.routes";
 // };
 initializeDataCache();
 
-// const app = new Hono<{ Variables: AppBindings }>()
-const app = new Hono()
-  .basePath("/api")
-  // Middlewares
-  .use("*", cache)
-  // .use("*", supabase())
-  .use("*", logger())
-  .use("*", cors())
-  .use("*", csrf())
-  .use("*", prettyJSON())
-  .use("*", secureHeaders())
-  .use("*", timing())
-  .use("*", sentry({ dsn: Bun.env.SENTRY_DSN, tracesSampleRate: 0.2 }))
-  .use("*")
-  // Routes
-  .route("/ui", swaggerApp)
-  .route("/auth", authRoutes)
-  .route("/me", meRoutes)
-  .route("/users", userRoutes)
-  .route("/games", gameRoutes)
-  .onError(errorHandler);
+const app = new Hono<{ Variables: AppBindings }>()
+	// const app = new Hono()
+	.basePath("/api")
+	// Middlewares
+	.use("*", cache)
+	// .use("*", supabase())
+	.use("*", logger())
+	.use("*", cors())
+	.use("*", csrf())
+	.use("*", prettyJSON())
+	.use("*", secureHeaders())
+	.use("*", timing())
+	.use("*", sentry({ dsn: Bun.env.SENTRY_DSN, tracesSampleRate: 0.2 }))
+	.use("*")
+	// Routes
+	.route("/ui", swaggerApp)
+	.route("/auth", authRoutes)
+	.route("/me", meRoutes)
+	.route("/users", userRoutes)
+	.route("/games", gameRoutes)
+	.onError(errorHandler);
 
 // Export the app TYPE
 export type AppType = typeof app;

@@ -1,13 +1,11 @@
 /**
- * Comprehensive error handling system for jackpot operations
+ * Comprehensive error handling system for gameplay operations
  * Provides structured error classification, logging, and debugging capabilities
  */
 
-import type { jackpotTypeEnum } from "@/core/database/schema";
-
 // Import existing types and schemas
 
-export type JackpotErrorCategory =
+export type GameplayErrorCategory =
 	| "VALIDATION"
 	| "DATABASE"
 	| "CONCURRENCY"
@@ -16,7 +14,7 @@ export type JackpotErrorCategory =
 	| "SYSTEM"
 	| "NETWORK";
 
-export type JackpotErrorCode =
+export type GameplayErrorCode =
 	// Validation errors (1000-1999)
 	| "VALIDATION_INVALID_GROUP"
 	| "VALIDATION_INVALID_AMOUNT"
@@ -50,9 +48,9 @@ export type JackpotErrorCode =
 	| "CONFIG_UPDATE_FAILED"
 
 	// Insufficient funds errors (5000-5999)
-	| "INSUFFICIENT_JACKPOT_FUNDS"
+	| "INSUFFICIENT_GAMEPLAY_FUNDS"
 	| "INSUFFICIENT_USER_FUNDS"
-	| "JACKPOT_EXCEEDS_MAX_AMOUNT"
+	| "GAMEPLAY_EXCEEDS_MAX_AMOUNT"
 
 	// System errors (6000-6999)
 	| "SYSTEM_INITIALIZATION_FAILED"
@@ -65,12 +63,11 @@ export type JackpotErrorCode =
 	| "NETWORK_CONNECTION_LOST"
 	| "NETWORK_SERVICE_UNAVAILABLE";
 
-export interface JackpotErrorContext {
+export interface GameplayErrorContext {
 	operationId: string;
 	correlationId?: string;
 	userId?: string;
 	gameId?: string;
-	group?: typeof jackpotTypeEnum;
 	requestId?: string;
 	sessionId?: string;
 	timestamp: Date;
@@ -80,36 +77,36 @@ export interface JackpotErrorContext {
 	[key: string]: any;
 }
 
-export interface JackpotErrorDetails {
-	code: JackpotErrorCode;
-	category: JackpotErrorCategory;
+export interface GameplayErrorDetails {
+	code: GameplayErrorCode;
+	category: GameplayErrorCategory;
 	message: string;
 	technicalDetails?: string;
 	suggestedAction?: string;
-	context: JackpotErrorContext;
+	context: GameplayErrorContext;
 	originalError?: Error;
 	stackTrace?: string;
 }
 
 /**
- * Base class for all jackpot-specific errors
+ * Base class for all gameplay-specific errors
  */
-export class JackpotError extends Error {
-	public readonly code: JackpotErrorCode;
-	public readonly category: JackpotErrorCategory;
-	public readonly context: JackpotErrorContext;
+export class GameplayError extends Error {
+	public readonly code: GameplayErrorCode;
+	public readonly category: GameplayErrorCategory;
+	public readonly context: GameplayErrorContext;
 	public readonly timestamp: Date;
 	public readonly originalError?: Error;
 
 	constructor(
 		message: string,
-		code: JackpotErrorCode,
-		category: JackpotErrorCategory,
-		context: JackpotErrorContext,
+		code: GameplayErrorCode,
+		category: GameplayErrorCategory,
+		context: GameplayErrorContext,
 		originalError?: Error,
 	) {
 		super(message);
-		this.name = "JackpotError";
+		this.name = "GameplayError";
 		this.code = code;
 		this.category = category;
 		this.context = context;
@@ -118,14 +115,14 @@ export class JackpotError extends Error {
 
 		// Capture stack trace for debugging
 		if (Error.captureStackTrace) {
-			Error.captureStackTrace(this, JackpotError);
+			Error.captureStackTrace(this, GameplayError);
 		}
 	}
 
 	/**
 	 * Convert error to structured format for logging
 	 */
-	toLogEntry(): JackpotErrorDetails {
+	toLogEntry(): GameplayErrorDetails {
 		return {
 			code: this.code,
 			category: this.category,
@@ -202,8 +199,8 @@ export class JackpotError extends Error {
 // VALIDATION ERRORS
 // ========================================
 
-export class ValidationError extends JackpotError {
-	constructor(message: string, code: JackpotErrorCode, context: JackpotErrorContext, originalError?: Error) {
+export class ValidationError extends GameplayError {
+	constructor(message: string, code: GameplayErrorCode, context: GameplayErrorContext, originalError?: Error) {
 		super(message, code, "VALIDATION", context, originalError);
 		this.name = "ValidationError";
 		this.suggestedAction = "Please check your input data and try again";
@@ -214,8 +211,8 @@ export class ValidationError extends JackpotError {
 // DATABASE ERRORS
 // ========================================
 
-export class DatabaseError extends JackpotError {
-	constructor(message: string, code: JackpotErrorCode, context: JackpotErrorContext, originalError?: Error) {
+export class DatabaseError extends GameplayError {
+	constructor(message: string, code: GameplayErrorCode, context: GameplayErrorContext, originalError?: Error) {
 		super(message, code, "DATABASE", context, originalError);
 		this.name = "DatabaseError";
 		this.technicalDetails = originalError?.message;
@@ -227,8 +224,8 @@ export class DatabaseError extends JackpotError {
 // CONCURRENCY ERRORS
 // ========================================
 
-export class ConcurrencyError extends JackpotError {
-	constructor(message: string, code: JackpotErrorCode, context: JackpotErrorContext, originalError?: Error) {
+export class ConcurrencyError extends GameplayError {
+	constructor(message: string, code: GameplayErrorCode, context: GameplayErrorContext, originalError?: Error) {
 		super(message, code, "CONCURRENCY", context, originalError);
 		this.name = "ConcurrencyError";
 		this.suggestedAction = "Please try again in a moment";
@@ -239,8 +236,8 @@ export class ConcurrencyError extends JackpotError {
 // CONFIGURATION ERRORS
 // ========================================
 
-export class ConfigurationError extends JackpotError {
-	constructor(message: string, code: JackpotErrorCode, context: JackpotErrorContext, originalError?: Error) {
+export class ConfigurationError extends GameplayError {
+	constructor(message: string, code: GameplayErrorCode, context: GameplayErrorContext, originalError?: Error) {
 		super(message, code, "CONFIGURATION", context, originalError);
 		this.name = "ConfigurationError";
 		this.suggestedAction = "Please contact support if the problem persists";
@@ -251,8 +248,8 @@ export class ConfigurationError extends JackpotError {
 // INSUFFICIENT FUNDS ERRORS
 // ========================================
 
-export class InsufficientFundsError extends JackpotError {
-	constructor(message: string, code: JackpotErrorCode, context: JackpotErrorContext, originalError?: Error) {
+export class InsufficientFundsError extends GameplayError {
+	constructor(message: string, code: GameplayErrorCode, context: GameplayErrorContext, originalError?: Error) {
 		super(message, code, "INSUFFICIENT_FUNDS", context, originalError);
 		this.name = "InsufficientFundsError";
 		this.suggestedAction = "Please check your account balance and try again";
@@ -263,8 +260,8 @@ export class InsufficientFundsError extends JackpotError {
 // SYSTEM ERRORS
 // ========================================
 
-export class SystemError extends JackpotError {
-	constructor(message: string, code: JackpotErrorCode, context: JackpotErrorContext, originalError?: Error) {
+export class SystemError extends GameplayError {
+	constructor(message: string, code: GameplayErrorCode, context: GameplayErrorContext, originalError?: Error) {
 		super(message, code, "SYSTEM", context, originalError);
 		this.name = "SystemError";
 		this.suggestedAction = "Please try again later or contact support";
@@ -275,8 +272,8 @@ export class SystemError extends JackpotError {
 // NETWORK ERRORS
 // ========================================
 
-export class NetworkError extends JackpotError {
-	constructor(message: string, code: JackpotErrorCode, context: JackpotErrorContext, originalError?: Error) {
+export class NetworkError extends GameplayError {
+	constructor(message: string, code: GameplayErrorCode, context: GameplayErrorContext, originalError?: Error) {
 		super(message, code, "NETWORK", context, originalError);
 		this.name = "NetworkError";
 		this.suggestedAction = "Please check your connection and try again";
@@ -292,8 +289,8 @@ export class NetworkError extends JackpotError {
  */
 export function createValidationError(
 	message: string,
-	code: JackpotErrorCode,
-	context: JackpotErrorContext,
+	code: GameplayErrorCode,
+	context: GameplayErrorContext,
 	originalError?: Error,
 ): ValidationError {
 	return new ValidationError(message, code, context, originalError);
@@ -304,8 +301,8 @@ export function createValidationError(
  */
 export function createDatabaseError(
 	message: string,
-	code: JackpotErrorCode,
-	context: JackpotErrorContext,
+	code: GameplayErrorCode,
+	context: GameplayErrorContext,
 	originalError?: Error,
 ): DatabaseError {
 	// Auto-detect database error type if not explicitly provided
@@ -333,8 +330,8 @@ export function createDatabaseError(
  */
 export function createConcurrencyError(
 	message: string,
-	code: JackpotErrorCode,
-	context: JackpotErrorContext,
+	code: GameplayErrorCode,
+	context: GameplayErrorContext,
 	originalError?: Error,
 ): ConcurrencyError {
 	return new ConcurrencyError(message, code, context, originalError);
@@ -345,8 +342,8 @@ export function createConcurrencyError(
  */
 export function createConfigurationError(
 	message: string,
-	code: JackpotErrorCode,
-	context: JackpotErrorContext,
+	code: GameplayErrorCode,
+	context: GameplayErrorContext,
 	originalError?: Error,
 ): ConfigurationError {
 	return new ConfigurationError(message, code, context, originalError);
@@ -357,8 +354,8 @@ export function createConfigurationError(
  */
 export function createInsufficientFundsError(
 	message: string,
-	code: JackpotErrorCode,
-	context: JackpotErrorContext,
+	code: GameplayErrorCode,
+	context: GameplayErrorContext,
 	originalError?: Error,
 ): InsufficientFundsError {
 	return new InsufficientFundsError(message, code, context, originalError);
@@ -369,8 +366,8 @@ export function createInsufficientFundsError(
  */
 export function createSystemError(
 	message: string,
-	code: JackpotErrorCode,
-	context: JackpotErrorContext,
+	code: GameplayErrorCode,
+	context: GameplayErrorContext,
 	originalError?: Error,
 ): SystemError {
 	return new SystemError(message, code, context, originalError);
@@ -381,23 +378,23 @@ export function createSystemError(
  */
 export function createNetworkError(
 	message: string,
-	code: JackpotErrorCode,
-	context: JackpotErrorContext,
+	code: GameplayErrorCode,
+	context: GameplayErrorContext,
 	originalError?: Error,
 ): NetworkError {
 	return new NetworkError(message, code, context, originalError);
 }
 
 /**
- * Convert generic error to appropriate jackpot error
+ * Convert generic error to appropriate gameplay error
  */
 export function categorizeError(
 	error: Error,
-	context: JackpotErrorContext,
-	defaultCategory: JackpotErrorCategory = "SYSTEM",
-): JackpotError {
-	// Check if it's already a jackpot error
-	if (error instanceof JackpotError) {
+	context: GameplayErrorContext,
+	defaultCategory: GameplayErrorCategory = "SYSTEM",
+): GameplayError {
+	// Check if it's already a gameplay error
+	if (error instanceof GameplayError) {
 		return error;
 	}
 
@@ -444,7 +441,7 @@ export function categorizeError(
 		errorMessage.includes("not enough") ||
 		errorMessage.includes("exceeds")
 	) {
-		return createInsufficientFundsError("Insufficient funds", "INSUFFICIENT_JACKPOT_FUNDS", context, error);
+		return createInsufficientFundsError("Insufficient funds", "INSUFFICIENT_GAMEPLAY_FUNDS", context, error);
 	}
 
 	// Default to system error
@@ -454,8 +451,8 @@ export function categorizeError(
 /**
  * Check if error code indicates a retryable error
  */
-export function isRetryableError(code: JackpotErrorCode): boolean {
-	const retryableCodes: JackpotErrorCode[] = [
+export function isRetryableError(code: GameplayErrorCode): boolean {
+	const retryableCodes: GameplayErrorCode[] = [
 		"DATABASE_TIMEOUT",
 		"DATABASE_DEADLOCK_DETECTED",
 		"DATABASE_SERIALIZATION_FAILURE",
@@ -471,7 +468,7 @@ export function isRetryableError(code: JackpotErrorCode): boolean {
 /**
  * Get error severity level for monitoring
  */
-export function getErrorSeverity(error: JackpotError): "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" {
+export function getErrorSeverity(error: GameplayError): "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" {
 	switch (error.category) {
 		case "VALIDATION":
 			return "LOW"; // User input errors

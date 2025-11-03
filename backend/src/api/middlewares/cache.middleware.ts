@@ -1,13 +1,13 @@
-import { BunSqliteKeyValue } from "../../core/cache";
 import type { MiddlewareHandler } from "hono";
+import { redis, RedisClient } from "bun";
 
-let sessionCache: BunSqliteKeyValue;
-let gameSessionCache: BunSqliteKeyValue;
+let sessionCache: RedisClient;
+let gameSessionCache: RedisClient;
 
-export const initializeDataCache = () =>
-{
-  sessionCache = new BunSqliteKeyValue(":memory:");
-  gameSessionCache = new BunSqliteKeyValue(":memory:");
+export const initializeDataCache = () => {
+  const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+  sessionCache = new RedisClient(redisUrl);
+  gameSessionCache = new RedisClient(redisUrl);
 };
 
 // export const cacheMiddleware = (options?: any): MiddlewareHandler => {
@@ -19,13 +19,10 @@ export const initializeDataCache = () =>
 //   };
 // };
 
-const cache: MiddlewareHandler = async (c, next) =>
-{
+const cache: MiddlewareHandler = async (c, next) => {
   c.set("sessionCache", sessionCache);
   c.set("gameSessionCache", gameSessionCache);
   await next();
-
 };
 
-export default cache
-
+export default cache;

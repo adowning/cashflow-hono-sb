@@ -31,8 +31,16 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  "exclude": ["./node_modules/**", "dist", "drizzle", "docs", "bruno"],
-  "include": ["src/**/*", "tests/**/*", "scripts/**/*"],
+  "exclude": [
+    "./node_modules/**",
+    "scripts",
+    "dist",
+    "tests",
+    "drizzle",
+    "docs",
+    "bruno"
+  ],
+  "include": ["src/**/*"],
   "ts-node": {
     "esm": true
   }

@@ -1,44 +1,41 @@
+// src/modules/gameplay/listeners/deposit-transaction.logger.ts
+
 import { logTransaction } from "@/shared/transaction.service";
 
+/**
+ * Logs the completed deposit to the main transaction ledger.
+ */
 export async function onBetCompleted(payload: any) {
   const {
     userId,
-    gameId,
-    wagerAmount,
-    winAmount,
+    depositId,
+    amount,
     realBalanceBefore,
-    bonusBalanceBefore,
     realBalanceAfter,
+    bonusBalanceBefore,
     bonusBalanceAfter,
-    betRequest,
-    ggrContribution,
-    jackpotContribution,
-    vipPointsAdded,
-    processingTime,
+    // vipPointsAdded, // <-- REMOVED
   } = payload;
-
-  const { sessionId } = betRequest;
 
   try {
     await logTransaction({
-      userId,
-      gameId,
-      operatorId: "79032f3f-7c4e-4575-abf9-4298ad3e9d1a",
-      wagerAmount,
-      winAmount,
-      type: "BET",
-      realBalanceBefore,
-      realBalanceAfter,
-      bonusBalanceBefore,
-      bonusBalanceAfter,
-      processingTime,
-      ggrContribution,
-      jackpotContribution,
-      vipPointsAdded,
-      sessionId,
+      userId: userId,
+      operatorId: "79032f3f-7c4e-4575-abf9-4298ad3e9d1a", // Or pass operatorId in payload
+      relatedId: depositId,
+      wagerAmount: 0,
+      winAmount: amount, // A deposit is a credit
+      realBalanceBefore: realBalanceBefore,
+      realBalanceAfter: realBalanceAfter,
+      bonusBalanceBefore: bonusBalanceBefore,
+      bonusBalanceAfter: bonusBalanceAfter,
       status: "COMPLETED",
+      type: "DEPOSIT",
+      vipPointsAdded: 0, // <-- Set to 0 initially. onVip will update this.
     });
   } catch (error) {
-    console.error("Transaction logging failed:", error);
+    console.error(
+      `Failed to log deposit transaction for user ${userId}:`,
+      error
+    );
   }
 }

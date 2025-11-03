@@ -1,170 +1,136 @@
 /**
- * Jackpot contribution system with 3 groups: minor, major, mega
- * Admin-configurable rates and game group assignments
- * Enhanced with comprehensive validation and TypeScript type safety
+ * Jackpot contribution system with 3 types: MINOR, MAJOR, GRAND
+ * Admin-configurable rates and game type assignments
+ * REFACTORED with correct enum types and normalized history tables
  */
 
 import { db } from "@/core/database/db";
 import {
-  JackpotSelectSchema,
-  jackpotTable,
+	jackpotTable,
+	jackpotWinHistoryTable,
+	jackpotContributionHistoryTable,
+	getDefaultJackpotConfig,
+	type JackpotWinHistory,
+	type JackpotContributionHistory,
+	type Jackpot as JackpotModel,
 } from "@/core/database/schema/jackpot";
 import { configurationManager } from "@/shared/config";
 import { eq, sql } from "drizzle-orm";
-
 import { z } from "zod";
+
+import { createOperationContext, jackpotLogger } from "./jackpot-logging.service";
+import {
+	type JackpotErrorContext,
+	categorizeError,
+	createConcurrencyError,
+	createDatabaseError,
+	createInsufficientFundsError,
+	createSystemError,
+	createValidationError,
+	JackpotError,
+} from "./jackpot-errors";
 
 // ========================================
 // VALIDATION SCHEMAS (Zod)
 // ========================================
 
-// Jackpot group validation schema
-export const JackpotGroupSchema = z.enum(["minor", "major", "mega"]);
+// --- REFACTORED: Use uppercase DB enum values ---
+export const JackpotTypeSchema = z.enum(["MINOR", "MAJOR", "GRAND"]);
 
-// Individual jackpot group configuration schema
-const JackpotGroupConfigSchema = z
-  .object({
-    rate: z
-      .number()
-      .min(0)
-      .max(1, "Contribution rate must be between 0 and 1 (0-100%)")
-      .optional(),
-    seedAmount: z
-      .number()
-      .int()
-      .positive("Seed amount must be a positive integer (cents)")
-      .optional(),
-    maxAmount: z.number().int().positive().optional(),
-  })
-  .refine(
-    (data) =>
-      !data.maxAmount || !data.seedAmount || data.maxAmount > data.seedAmount,
-    { message: "Maximum amount must be greater than seed amount" }
-  );
+// Config object keys can remain lowercase
+const JackpotTypeConfigSchema = z
+	.object({
+		rate: z.number().min(0).max(1, "Contribution rate must be between 0 and 1 (0-100%)").optional(),
+		seedAmount: z.number().int().positive("Seed amount must be a positive integer (cents)").optional(),
+		maxAmount: z.number().int().positive().optional(),
+	})
+	.refine((data) => !data.maxAmount || !data.seedAmount || data.maxAmount > data.seedAmount, {
+		message: "Maximum amount must be greater than seed amount",
+	});
 
-// Comprehensive jackpot configuration schema
+// Config object keys are lowercase: 'minor', 'major', 'mega'
 export const JackpotConfigSchema = z.object({
-  minor: JackpotGroupConfigSchema,
-  major: JackpotGroupConfigSchema,
-  mega: JackpotGroupConfigSchema,
+	minor: JackpotTypeConfigSchema,
+	major: JackpotTypeConfigSchema,
+	mega: JackpotTypeConfigSchema,
 });
 
-// Jackpot contribution request schema
 export const JackpotContributionRequestSchema = z.object({
-  gameId: z.string().min(1, "Game ID cannot be empty").trim(),
-  wagerAmount: z
-    .number()
-    .int()
-    .positive("Wager amount must be a positive integer (cents)"),
+	gameId: z.string().min(1, "Game ID cannot be empty").trim(),
+	wagerAmount: z.number().int().positive("Wager amount must be a positive integer (cents)"),
 });
 
-// Jackpot win request schema
 export const JackpotWinRequestSchema = z.object({
-  group: JackpotGroupSchema,
-  gameId: z.string().min(1, "Game ID cannot be empty").trim(),
-  userId: z.string().uuid("User ID must be a valid UUID"),
-  winAmount: z
-    .number()
-    .int()
-    .positive("Win amount must be a positive integer (cents)")
-    .optional(),
+	// --- REFACTORED: Use uppercase schema ---
+	type: JackpotTypeSchema,
+	gameId: z.string().min(1, "Game ID cannot be empty").trim(),
+	userId: z.string().uuid("User ID must be a valid UUID"),
+	winAmount: z.number().int().positive("Win amount must be a positive integer (cents)").optional(),
 });
 
-// Jackpot configuration update schema
 export const JackpotConfigUpdateSchema = JackpotConfigSchema.partial();
 
 // ========================================
 // ENHANCED TYPE DEFINITIONS
 // ========================================
 
-// Type-safe jackpot group type
-export type JackpotGroup = z.infer<typeof JackpotGroupSchema>;
+export type JackpotType = z.infer<typeof JackpotTypeSchema>;
+export type { JackpotModel };
 
-// Database model types (from Drizzle schema)
-export type JackpotModel = z.infer<typeof JackpotSelectSchema>;
-
-// Comprehensive jackpot configuration with validation
 export interface JackpotConfig {
-  minor: z.infer<typeof JackpotGroupConfigSchema>;
-  major: z.infer<typeof JackpotGroupConfigSchema>;
-  mega: z.infer<typeof JackpotGroupConfigSchema>;
+	minor: z.infer<typeof JackpotTypeConfigSchema>;
+	major: z.infer<typeof JackpotTypeConfigSchema>;
+	mega: z.infer<typeof JackpotTypeConfigSchema>;
 }
 
-// Enhanced jackpot pool interface with strict typing
 export interface JackpotPool {
-  group: JackpotGroup;
-  currentAmount: number;
-  totalContributions: number;
-  totalWins: number;
-  lastWinDate?: Date;
-  lastWinAmount?: number;
-  seedAmount?: number;
-  maxAmount?: number;
-  contributionRate?: number;
-  lastWonByUserId?: string;
+	type: JackpotType;
+	currentAmount: number;
+	totalContributions: number;
+	totalWins: number;
+	lastWinDate?: Date;
+	lastWonAmount?: number;
+	seedAmount?: number;
+	maxAmount?: number;
+	contributionRate?: number;
+	lastWonByUserId?: string;
 }
 
-// Enhanced jackpot contribution interface
 export interface JackpotContribution {
-  gameId: string;
-  wagerAmount: number; // Amount in cents
-  contributions: Record<JackpotGroup, number>;
-  timestamp: Date;
+	gameId: string;
+	wagerAmount: number; // Amount in cents
+	contributions: Record<JackpotType, number>;
+	timestamp: Date;
 }
 
-// Enhanced jackpot win interface
 export interface JackpotWin {
-  group: JackpotGroup;
-  gameId: string;
-  userId: string;
-  winAmount: number;
-  timestamp: Date;
+	type: JackpotType;
+	gameId: string;
+	userId: string;
+	winAmount: number;
+	timestamp: Date;
 }
 
-// Database transaction types for strict type safety
-export interface JackpotContributionRecord {
-  wagerAmount: number;
-  contributionAmount: number;
-  winAmount: number;
-  betTransactionId: string;
-  jackpotId: string;
-  createdAt: Date;
-  operatorId: string;
-}
-
-export interface JackpotWinRecord {
-  userId: string;
-  gameId: string;
-  amountWon: number;
-  winningSpinTransactionId: string;
-  timeStampOfWin: Date;
-  numberOfJackpotWinsForUserBefore: number;
-  numberOfJackpotWinsForUserAfter: number;
-  operatorId: string;
-  userCreateDate: Date;
-  videoClipLocation: string;
-}
-
-// Service method return types with comprehensive error handling
+// Service method return types
 export interface JackpotContributionResult {
-  success: boolean;
-  contributions: Record<JackpotGroup, number>;
-  totalContribution: number;
-  error?: string;
+	success: boolean;
+	contributions: Record<JackpotType, number>;
+	totalContribution: number;
+	error?: string;
 }
 
 export interface JackpotWinResult {
-  success: boolean;
-  actualWinAmount: number;
-  error?: string;
-  remainingAmount?: number;
+	success: boolean;
+	actualWinAmount: number;
+	error?: string;
+	remainingAmount?: number;
 }
 
-// Validation result types
-export interface ValidationResult<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
+// Concurrency result types
+export interface ConcurrencySafeResult<T> {
+	data: T;
+	retryCount?: number;
+	lockAcquired?: boolean;
 }
 
 // ========================================
@@ -174,1156 +140,857 @@ export interface ValidationResult<T> {
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 100;
 const LOCK_TIMEOUT_MS = 5000;
-const CONCURRENCY_CHECK_INTERVAL_MS = 50;
 
-// Concurrency violation error types
-export class ConcurrencyViolationError extends Error {
-  constructor(
-    message: string,
-    public readonly operation: string,
-    public readonly group: JackpotGroup,
-    public readonly conflictDetails?: any
-  ) {
-    super(message);
-    this.name = "ConcurrencyViolationError";
-  }
-}
-
-export class LockTimeoutError extends Error {
-  constructor(
-    message: string,
-    public readonly operation: string,
-    public readonly timeoutMs: number
-  ) {
-    super(message);
-    this.name = "LockTimeoutError";
-  }
-}
-
-// Enhanced result types with concurrency information
-export interface ConcurrencySafeResult<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  retryCount?: number;
-  lockAcquired?: boolean;
-  versionConflict?: boolean;
-}
-
-// ========================================
-// CONCURRENCY CONTROL HELPERS
-// ========================================
-
-/**
- * Generate unique operation ID for tracking
- */
-function generateOperationId(): string {
-  return `op_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
-/**
- * Sleep utility for retry delays
- */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Check if error is related to concurrency violations
- */
 function isConcurrencyError(error: any): boolean {
-  const errorMessage = error?.message?.toLowerCase() || "";
-  return (
-    errorMessage.includes("concurrent") ||
-    errorMessage.includes("lock") ||
-    errorMessage.includes("deadlock") ||
-    errorMessage.includes("timeout") ||
-    errorMessage.includes("serialization") ||
-    errorMessage.includes("version") ||
-    error?.code === "23505" || // Unique violation
-    error?.code === "23506" || // Check violation
-    error?.code === "23514" // Exclusion violation
-  );
+	const errorMessage = error?.message?.toLowerCase() || "";
+	return (
+		errorMessage.includes("concurrent") ||
+		errorMessage.includes("lock") ||
+		errorMessage.includes("deadlock") ||
+		errorMessage.includes("timeout") ||
+		errorMessage.includes("serialization") ||
+		errorMessage.includes("version") ||
+		error?.code === "40001" || // Serialization Failure
+		error?.code === "40P01" || // Deadlock Detected
+		error?.code === "23505" // Unique violation
+	);
 }
 
 // ========================================
-// VALIDATION HELPERS
+// VALIDATION HELPERS (REFACTORED)
 // ========================================
 
-/**
- * Sanitize string input to prevent injection attacks
- */
-function sanitizeString(input: string): string {
-  return input.replace(/[\r\n\t\b\f\v\\"]/g, "").trim();
-}
-
-/**
- * Validate and sanitize jackpot contribution request
- */
 export function validateJackpotContributionRequest(
-  input: unknown
-): ValidationResult<z.infer<typeof JackpotContributionRequestSchema>> {
-  try {
-    const result = JackpotContributionRequestSchema.parse(input);
-
-    // Additional sanitization
-    const sanitized = {
-      ...result,
-      gameId: sanitizeString(result.gameId),
-    };
-
-    return {
-      success: true,
-      data: sanitized,
-    };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return {
-        success: false,
-        error: `Validation failed: ${error.issues.map((e) => e.message).join(", ")}`,
-      };
-    }
-    return {
-      success: false,
-      error: "Unknown validation error",
-    };
-  }
+	input: unknown,
+	context: JackpotErrorContext,
+): z.infer<typeof JackpotContributionRequestSchema> {
+	try {
+		const result = JackpotContributionRequestSchema.parse(input);
+		return {
+			...result,
+			gameId: sanitizeString(result.gameId),
+		};
+	} catch (error) {
+		throw createValidationError(
+			"Validation failed for jackpot contribution",
+			"VALIDATION_INVALID_AMOUNT",
+			context,
+			error instanceof z.ZodError ? error : undefined,
+		);
+	}
 }
 
-/**
- * Validate and sanitize jackpot win request
- */
 export function validateJackpotWinRequest(
-  input: unknown
-): ValidationResult<z.infer<typeof JackpotWinRequestSchema>> {
-  try {
-    const result = JackpotWinRequestSchema.parse(input);
-
-    // Additional sanitization
-    const sanitized = {
-      ...result,
-      gameId: sanitizeString(result.gameId),
-    };
-
-    return {
-      success: true,
-      data: sanitized,
-    };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return {
-        success: false,
-        error: `Validation failed: ${error.issues.map((e) => e.message).join(", ")}`,
-      };
-    }
-    return {
-      success: false,
-      error: "Unknown validation error",
-    };
-  }
+	input: unknown,
+	context: JackpotErrorContext,
+): z.infer<typeof JackpotWinRequestSchema> {
+	try {
+		const result = JackpotWinRequestSchema.parse(input);
+		return {
+			...result,
+			gameId: sanitizeString(result.gameId),
+		};
+	} catch (error) {
+		throw createValidationError(
+			"Validation failed for jackpot win",
+			"VALIDATION_INVALID_AMOUNT",
+			context,
+			error instanceof z.ZodError ? error : undefined,
+		);
+	}
 }
 
-/**
- * Validate jackpot configuration update
- */
 export function validateJackpotConfigUpdate(
-  input: unknown
-): ValidationResult<z.infer<typeof JackpotConfigUpdateSchema>> {
-  try {
-    const result = JackpotConfigUpdateSchema.parse(input);
-    return {
-      success: true,
-      data: result,
-    };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return {
-        success: false,
-        error: `Configuration validation failed: ${error.issues.map((e) => e.message).join(", ")}`,
-      };
-    }
-    return {
-      success: false,
-      error: "Unknown configuration validation error",
-    };
-  }
+	input: unknown,
+	context: JackpotErrorContext,
+): z.infer<typeof JackpotConfigUpdateSchema> {
+	try {
+		return JackpotConfigUpdateSchema.parse(input);
+	} catch (error) {
+		throw createValidationError(
+			"Validation failed for jackpot config update",
+			"VALIDATION_INVALID_CONFIG",
+			context,
+			error instanceof z.ZodError ? error : undefined,
+		);
+	}
+}
+
+function sanitizeString(input: string): string {
+	return input.replace(/[\r\n\t\b\f\v\\"]/g, "").trim();
 }
 
 /**
- * Default jackpot configuration - should be admin configurable
- */
-const DEFAULT_JACKPOT_CONFIG: JackpotConfig = {
-  minor: {
-    rate: 0.02, // 2%
-    seedAmount: 100000, // $1,000
-    maxAmount: 1000000, // $10,000 cap
-  },
-  major: {
-    rate: 0.01, // 1%
-    seedAmount: 1000000, // $10,000
-    maxAmount: 10000000, // $100,000 cap
-  },
-  mega: {
-    rate: 0.005, // 0.5%
-    seedAmount: 10000000, // $100,000
-    maxAmount: 100000000, // $1,000,000 cap
-  },
-};
-
-// Export the ConcurrencySafeDB class for testing
-export { ConcurrencySafeDB };
-
-/**
- * Enhanced database operations with concurrency control
+ * Enhanced database operations with concurrency control (REFACTORED)
  */
 class ConcurrencySafeDB {
-  /**
-   * Optimistically locked update with retry logic
-   */
-  static async optimisticUpdate<T>(
-    operation: string,
-    group: JackpotGroup,
-    updateFn: (pool: any, tx: any) => Promise<T>,
-    maxRetries: number = MAX_RETRY_ATTEMPTS
-  ): Promise<ConcurrencySafeResult<T>> {
-    const operationId = generateOperationId();
+	static async optimisticUpdate<T>(
+		operation: string,
+		type: JackpotType,
+		updateFn: (pool: any, tx: any) => Promise<T>,
+		context: JackpotErrorContext,
+		maxRetries: number = MAX_RETRY_ATTEMPTS,
+	): Promise<ConcurrencySafeResult<T>> {
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
+			try {
+				const result = await db.transaction(async (tx) => {
+					const pools = await tx.select().from(jackpotTable).where(eq(jackpotTable.jackpotType, type)).limit(1);
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const result = await db.transaction(async (tx) => {
-          // Get current pool state with version for optimistic locking
-          const pools = await tx
-            .select()
-            .from(jackpotTable)
-            .where(eq(jackpotTable.group, group))
-            .limit(1);
+					const pool = pools[0];
+					if (!pool) {
+						throw createSystemError(`Jackpot pool not found for type: ${type}`, "SYSTEM_UNEXPECTED_STATE", context);
+					}
 
-          const pool = pools[0];
-          if (!pool) {
-            throw new Error(`Jackpot pool not found for group: ${group}`);
-          }
+					const originalVersion = pool.version;
 
-          // Store original version for comparison
-          const originalVersion = pool.version;
-          const originalAmount = pool.currentAmount;
+					const updateResult = await updateFn(pool, tx);
 
-          // Perform the actual update operation
-          const updateResult = await updateFn(pool, tx);
+					const verificationQuery = await tx
+						.select({ version: jackpotTable.version })
+						.from(jackpotTable)
+						.where(eq(jackpotTable.jackpotType, type))
+						.limit(1);
 
-          // Verify version has been incremented (optimistic locking check)
-          const verificationQuery = await tx
-            .select({
-              version: jackpotTable.version,
-              currentAmount: jackpotTable.currentAmount,
-            })
-            .from(jackpotTable)
-            .where(eq(jackpotTable.group, group))
-            .limit(1);
+					const currentVersion = verificationQuery[0]?.version || 0;
 
-          const currentVersion = verificationQuery[0]?.version || 0;
+					if (currentVersion === originalVersion) {
+						// No-op, fine
+					} else if (currentVersion !== originalVersion + 1) {
+						throw createConcurrencyError(
+							`Version conflict on ${type}: expected ${originalVersion + 1}, found ${currentVersion}`,
+							"CONCURRENCY_VERSION_CONFLICT",
+							context,
+						);
+					}
 
-          // EXTREMELY PERMISSIVE VERSION CHECK: For critical bet processing,
-          // always consider the operation successful regardless of version changes
-          if (currentVersion > originalVersion) {
-            console.info(
-              `Concurrent update successful on ${group}: ` +
-                `version updated from ${originalVersion} to ${currentVersion}`
-            );
-          } else if (currentVersion === originalVersion) {
-            console.info(
-              `Update completed successfully on ${group} (version unchanged): ` +
-                `original: ${originalVersion}, current: ${currentVersion}, attempt: ${attempt}. ` +
-                `This is expected in low-concurrency scenarios.`
-            );
-          }
+					return updateResult;
+				});
 
-          return updateResult;
-        });
+				return {
+					data: result,
+					retryCount: attempt - 1,
+					lockAcquired: true,
+				};
+			} catch (error) {
+				if (error instanceof JackpotError) {
+					if (error.isRetryable() && attempt < maxRetries) {
+						jackpotLogger.warn(`Retrying operation ${operation} on ${type}`, context, { attempt });
+						await new Promise((res) => setTimeout(res, RETRY_DELAY_MS * Math.pow(2, attempt)));
+						continue;
+					}
+					throw error;
+				}
 
-        return {
-          success: true,
-          data: result,
-          retryCount: attempt - 1,
-          lockAcquired: true,
-        };
-      } catch (error) {
-        // Only retry on actual database errors, not concurrency issues
-        if (error instanceof ConcurrencyViolationError) {
-          console.warn(
-            `Concurrency error during ${operation} on ${group} (attempt ${attempt}): ${error.message}. ` +
-              `Continuing without retry to prevent blocking bet processing.`
-          );
-          // Don't throw concurrency errors - just continue with failure
-          return {
-            success: false,
-            data: undefined,
-            error: `Concurrency conflict during ${operation}: ${error.message}`,
-            retryCount: attempt - 1,
-            versionConflict: true,
-          };
-        }
+				if (isConcurrencyError(error) && attempt < maxRetries) {
+					jackpotLogger.warn(`Retrying operation ${operation} on ${type} due to concurrency issue`, context, {
+						attempt,
+						error: (error as Error).message,
+					});
+					await new Promise((res) => setTimeout(res, RETRY_DELAY_MS * Math.pow(2, attempt)));
+					continue;
+				}
 
-        // For non-concurrency errors, retry with backoff
-        if (attempt < maxRetries) {
-          console.warn(
-            `Attempt ${attempt} failed for ${operation} on ${group}:`,
-            error
-          );
-          const jitter = Math.random() * 0.3; // 0-30% jitter
-          const delay =
-            RETRY_DELAY_MS * Math.pow(1.5, attempt - 1) * (1 + jitter);
-          await sleep(delay);
-          continue;
-        } else {
-          return {
-            success: false,
-            data: undefined,
-            error: `Max retries exceeded for ${operation}: ${error instanceof Error ? error.message : "Unknown error"}`,
-            retryCount: attempt - 1,
-          };
-        }
-      }
-    }
+				throw createDatabaseError(
+					`Operation ${operation} failed on ${type} after ${attempt} attempts`,
+					"DATABASE_CONNECTION_FAILED",
+					context,
+					error as Error,
+				);
+			}
+		}
+		throw createSystemError("Max retries exceeded for optimistic update", "SYSTEM_UNEXPECTED_STATE", context);
+	}
 
-    return {
-      success: false,
-      data: undefined,
-      error: `Max retries exceeded for ${operation}`,
-      retryCount: maxRetries,
-    };
-  }
+	static async pessimisticUpdate<T>(
+		operation: string,
+		type: JackpotType,
+		updateFn: (pool: any, tx: any) => Promise<T>,
+		context: JackpotErrorContext,
+		timeoutMs: number = LOCK_TIMEOUT_MS,
+	): Promise<ConcurrencySafeResult<T>> {
+		try {
+			const result = await db.transaction(async (tx) => {
+				const pools = await tx.execute(sql`
+		  SELECT * FROM ${jackpotTable}
+		  WHERE ${jackpotTable.jackpotType} = ${type}
+		  LIMIT 1
+		  FOR UPDATE NOWAIT
+		`);
 
-  /**
-   * Pessimistic locking with SELECT FOR UPDATE
-   */
-  static async pessimisticUpdate<T>(
-    operation: string,
-    group: JackpotGroup,
-    updateFn: (pool: any, tx: any) => Promise<T>,
-    timeoutMs: number = LOCK_TIMEOUT_MS
-  ): Promise<ConcurrencySafeResult<T>> {
-    const operationId = generateOperationId();
+				const pool = (pools as any).rows?.[0];
 
-    try {
-      const result = await db.transaction(async (tx) => {
-        // For now, use the standard Drizzle query without forUpdate() to avoid TypeScript issues
-        // In production, you might need to implement raw SQL FOR UPDATE
-        const pools = await tx
-          .select()
-          .from(jackpotTable)
-          .where(eq(jackpotTable.group, group))
-          .limit(1);
+				if (!pool) {
+					throw createSystemError(`Jackpot pool not found for type: ${type}`, "SYSTEM_UNEXPECTED_STATE", context);
+				}
 
-        const pool = pools[0];
-        if (!pool) {
-          throw new Error(`Jackpot pool not found for group: ${group}`);
-        }
+				return await updateFn(pool, tx);
+			});
 
-        // Add lock tracking info
-        await tx
-          .update(jackpotTable)
-          .set({
-            lockHolder: operationId,
-            lastModifiedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(jackpotTable.group, group));
+			return {
+				data: result,
+				retryCount: 0,
+				lockAcquired: true,
+			};
+		} catch (error) {
+			if (error instanceof JackpotError) throw error;
 
-        // Perform the update operation
-        const updateResult = await updateFn(pool, tx);
+			const err = error as Error & { code?: string };
 
-        return updateResult;
-      });
+			if (isConcurrencyError(err) || err.code === "55P03") {
+				throw createConcurrencyError(
+					`Could not acquire lock for ${operation} on ${type}`,
+					"CONCURRENCY_LOCK_TIMEOUT",
+					context,
+					err,
+				);
+			}
 
-      return {
-        success: true,
-        data: result,
-        retryCount: 0,
-        lockAcquired: true,
-      };
-    } catch (error) {
-      console.error(
-        `Pessimistic update failed for ${operation} on ${group}:`,
-        error
-      );
+			throw createDatabaseError(
+				`Pessimistic update failed for ${operation} on ${type}`,
+				"DATABASE_CONNECTION_FAILED",
+				context,
+				err,
+			);
+		}
+	}
 
-      if (isConcurrencyError(error)) {
-        return {
-          success: false,
-          data: undefined,
-          error: `Lock timeout or concurrency error during ${operation}: ${error instanceof Error ? error.message : "Unknown error"}`,
-          retryCount: 0,
-          lockAcquired: false,
-        };
-      }
+	static async batchOptimisticUpdate<T>(
+		operation: string,
+		types: JackpotType[],
+		updateFn: (pools: any[], tx: any) => Promise<T>,
+		context: JackpotErrorContext,
+		maxRetries: number = MAX_RETRY_ATTEMPTS,
+	): Promise<ConcurrencySafeResult<T>> {
+		for (let attempt = 1; attempt <= maxRetries; attempt++) {
+			try {
+				const result = await db.transaction(async (tx) => {
+					const pools = await tx.select().from(jackpotTable).where(sql`${jackpotTable.jackpotType} IN ${types}`);
 
-      return {
-        success: false,
-        data: undefined,
-        error: `Operation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        retryCount: 0,
-        lockAcquired: false,
-      };
-    }
-  }
+					if (pools.length !== types.length) {
+						throw createSystemError(
+							`Some jackpot pools not found. Expected ${types.length}, found ${pools.length}`,
+							"SYSTEM_UNEXPECTED_STATE",
+							context,
+						);
+					}
 
-  /**
-   * Atomic batch update for multiple groups
-   */
-  static async batchOptimisticUpdate<T>(
-    operation: string,
-    groups: JackpotGroup[],
-    updateFn: (pools: any[], tx: any) => Promise<T>,
-    maxRetries: number = MAX_RETRY_ATTEMPTS
-  ): Promise<ConcurrencySafeResult<T>> {
-    const operationId = generateOperationId();
+					const originalVersions = new Map<string, number>();
+					pools.forEach((pool) => originalVersions.set(pool.jackpotType, pool.version));
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const result = await db.transaction(async (tx) => {
-          // Get all pool states with versions
-          const pools = await tx
-            .select()
-            .from(jackpotTable)
-            .where(sql`${jackpotTable.group} IN (${groups.join(", ")})`);
+					const updateResult = await updateFn(pools, tx);
 
-          if (pools.length !== groups.length) {
-            throw new Error(
-              `Some jackpot pools not found. Expected ${groups.length}, found ${pools.length}`
-            );
-          }
+					const verificationPools = await tx
+						.select({
+							type: jackpotTable.jackpotType,
+							version: jackpotTable.version,
+						})
+						.from(jackpotTable)
+						.where(sql`${jackpotTable.jackpotType} IN ${types}`);
 
-          // Store original versions
-          const originalVersions = new Map<string, number>();
-          pools.forEach((pool) =>
-            originalVersions.set(pool.group, pool.version)
-          );
+					for (const pool of verificationPools) {
+						const originalVersion = originalVersions.get(pool.type) || 0;
+						const currentVersion = pool.version;
 
-          // Perform the batch update operation
-          const updateResult = await updateFn(pools, tx);
+						if (currentVersion === originalVersion) {
+							continue; // No-op
+						}
 
-          // Verify all versions have been incremented (optimistic locking)
-          for (const group of groups) {
-            const verificationQuery = await tx
-              .select({ version: jackpotTable.version })
-              .from(jackpotTable)
-              .where(eq(jackpotTable.group, group))
-              .limit(1);
+						if (currentVersion !== originalVersion + 1) {
+							throw createConcurrencyError(
+								`Version conflict during batch ${operation} on ${pool.type}: expected ${originalVersion + 1}, found ${currentVersion}`,
+								"CONCURRENCY_VERSION_CONFLICT",
+								context,
+							);
+						}
+					}
 
-            const originalVersion = originalVersions.get(group) || 0;
-            const currentVersion = verificationQuery[0]?.version || 0;
+					return updateResult;
+				});
 
-            // EXTREMELY PERMISSIVE VERSION CHECK: For critical bet processing,
-            // always consider the operation successful regardless of version changes
-            if (currentVersion > originalVersion) {
-              console.info(
-                `Concurrent batch update successful on ${group}: ` +
-                  `version updated from ${originalVersion} to ${currentVersion}`
-              );
-            } else if (currentVersion === originalVersion) {
-              // console.info(
-              //   `Batch update completed successfully on ${group} (version unchanged): ` +
-              //   `original: ${originalVersion}, current: ${currentVersion}, attempt: ${attempt}. ` +
-              //   `This is expected in low-concurrency scenarios.`
-              // );
-            }
-          }
+				return {
+					data: result,
+					retryCount: attempt - 1,
+					lockAcquired: true,
+				};
+			} catch (error) {
+				if (error instanceof JackpotError) {
+					if (error.isRetryable() && attempt < maxRetries) {
+						jackpotLogger.warn(`Retrying batch operation ${operation}`, context, { attempt });
+						await new Promise((res) => setTimeout(res, RETRY_DELAY_MS * Math.pow(2, attempt)));
+						continue;
+					}
+					throw error;
+				}
 
-          return updateResult;
-        });
+				if (isConcurrencyError(error) && attempt < maxRetries) {
+					jackpotLogger.warn(`Retrying batch operation ${operation} due to concurrency issue`, context, {
+						attempt,
+						error: (error as Error).message,
+					});
+					await new Promise((res) => setTimeout(res, RETRY_DELAY_MS * Math.pow(2, attempt)));
+					continue;
+				}
 
-        return {
-          success: true,
-          data: result,
-          retryCount: attempt - 1,
-          lockAcquired: true,
-        };
-      } catch (error) {
-        // Only retry on actual database errors, not concurrency issues
-        if (error instanceof ConcurrencyViolationError) {
-          console.warn(
-            `Concurrency error during batch ${operation} (attempt ${attempt}): ${error.message}. ` +
-              `Continuing without retry to prevent blocking bet processing.`
-          );
-          // Don't throw concurrency errors - just continue with failure
-          return {
-            success: false,
-            data: undefined,
-            error: `Concurrency conflict during batch ${operation}: ${error.message}`,
-            retryCount: attempt - 1,
-            versionConflict: true,
-          };
-        }
-
-        // For non-concurrency errors, retry with backoff
-        if (attempt < maxRetries) {
-          console.warn(
-            `Batch attempt ${attempt} failed for ${operation}:`,
-            error
-          );
-          const jitter = Math.random() * 0.3; // 0-30% jitter
-          const delay =
-            RETRY_DELAY_MS * Math.pow(1.5, attempt - 1) * (1 + jitter);
-          await sleep(delay);
-          continue;
-        } else {
-          return {
-            success: false,
-            data: undefined,
-            error: `Max retries exceeded for batch ${operation}: ${error instanceof Error ? error.message : "Unknown error"}`,
-            retryCount: attempt - 1,
-          };
-        }
-      }
-    }
-
-    return {
-      success: false,
-      data: undefined,
-      error: `Max retries exceeded for batch ${operation}`,
-      retryCount: maxRetries,
-    };
-  }
+				throw createDatabaseError(
+					`Batch operation ${operation} failed after ${attempt} attempts`,
+					"DATABASE_CONNECTION_FAILED",
+					context,
+					error as Error,
+				);
+			}
+		}
+		throw createSystemError("Max retries exceeded for batch update", "SYSTEM_UNEXPECTED_STATE", context);
+	}
 }
 
 /**
- * Database-backed jackpot manager with proper transactions and persistence
+ * Database-backed jackpot manager (REFACTORED)
  */
 class JackpotManager {
-  private config: JackpotConfig;
-  private initialized: boolean = false;
-
-  constructor() {
-    const settings = configurationManager.getConfiguration();
-    this.config = settings.jackpotConfig as any;
-  }
-
-  /**
-   * Ensure jackpot pools are initialized in database
-   */
-  private async ensureInitialized(): Promise<void> {
-    if (this.initialized) {
-      return;
-    }
-
-    try {
-      await db.transaction(async (tx) => {
-        // Check if jackpot pools exist for all groups
-        const existingPools = await tx
-          .select()
-          .from(jackpotTable)
-          .where(
-            sql`${jackpotTable.group} IN (${"minor"}, ${"major"}, ${"mega"})`
-          );
-
-        const existingGroups = new Set(existingPools.map((pool) => pool.group));
-        const missingGroups = ["minor", "major", "mega"].filter(
-          (group) => !existingGroups.has(group as JackpotGroup)
-        );
-
-        // Insert missing pools with default values
-        for (const group of missingGroups) {
-          const groupConfig = this.config[group as JackpotGroup];
-          // Ensure all required fields have values
-          const seedAmount = groupConfig.seedAmount || 0;
-          const rate = groupConfig.rate || 0;
-          const maxAmount = groupConfig.maxAmount || null;
-
-          await tx.insert(jackpotTable).values({
-            group: group as JackpotGroup,
-            currentAmount: seedAmount,
-            seedAmount: seedAmount,
-            maxAmount: maxAmount,
-            contributionRate: rate,
-            minBet: null,
-            lastWonAmount: null,
-            lastWonAt: null,
-            lastWonByUserId: null,
-            totalContributions: 0,
-            totalWins: 0,
-            winHistory: [],
-            contributionHistory: [],
-          });
-        }
-      });
-
-      this.initialized = true;
-      console.log("Jackpot pools initialized successfully");
-    } catch (error) {
-      console.error("Failed to initialize jackpot pools:", error);
-      throw new Error("Jackpot initialization failed");
-    }
-  }
-
-  /**
-   * Get current jackpot configuration
-   */
-  getConfig(): JackpotConfig {
-    return { ...this.config };
-  }
-
-  /**
-   * Update jackpot configuration (admin function) with concurrency safety
-   */
-  async updateConfig(
-    newConfig: Partial<JackpotConfig>
-  ): Promise<{ success: boolean; error?: string }> {
-    // Validate configuration update first
-    const validation = validateJackpotConfigUpdate(newConfig);
-    if (!validation.success) {
-      return {
-        success: false,
-        error: validation.error,
-      };
-    }
-
-    const validatedConfig = validation.data!;
-
-    // Merge validated config with existing config
-    this.config = { ...this.config, ...validatedConfig };
-
-    // Get affected groups for atomic update
-    const affectedGroups = Object.keys(validatedConfig) as JackpotGroup[];
-
-    if (affectedGroups.length === 0) {
-      return { success: true }; // No database changes needed
-    }
-
-    try {
-      // Use pessimistic locking for configuration updates (critical admin operation)
-      const result = await ConcurrencySafeDB.batchOptimisticUpdate(
-        "updateConfig",
-        affectedGroups,
-        async (pools, tx) => {
-          for (const pool of pools) {
-            const group = pool.group as JackpotGroup;
-            const poolConfig = validatedConfig[group];
-
-            if (!poolConfig) continue;
-
-            const updateData: any = {
-              updatedAt: new Date(),
-              version: sql`version + 1`, // Increment version for optimistic locking
-            };
-
-            if (poolConfig.seedAmount !== undefined) {
-              updateData.seedAmount = poolConfig.seedAmount;
-            }
-
-            if (poolConfig.maxAmount !== undefined) {
-              updateData.maxAmount = poolConfig.maxAmount;
-            }
-
-            if (poolConfig.rate !== undefined) {
-              updateData.contributionRate = poolConfig.rate;
-            }
-
-            await tx
-              .update(jackpotTable)
-              .set(updateData)
-              .where(eq(jackpotTable.group, group));
-          }
-        }
-      );
-
-      if (!result.success) {
-        return {
-          success: false,
-          error: result.error,
-        };
-      }
-
-      console.log("Jackpot configuration updated successfully");
-      return { success: true };
-    } catch (error) {
-      console.error(
-        "Failed to update jackpot configuration in database:",
-        error
-      );
-      return {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to update jackpot configuration",
-      };
-    }
-  }
-
-  /**
-   * Get current jackpot pool for a group
-   */
-  async getPool(group: JackpotGroup): Promise<JackpotPool> {
-    await this.ensureInitialized();
-
-    try {
-      const pools = await db
-        .select()
-        .from(jackpotTable)
-        .where(eq(jackpotTable.group, group));
-
-      const pool = pools[0];
-      if (!pool) {
-        throw new Error(`Jackpot pool not found for group: ${group}`);
-      }
-
-      return {
-        group: pool.group,
-        currentAmount: pool.currentAmount,
-        totalContributions: pool.totalContributions || 0,
-        totalWins: pool.totalWins || 0,
-        lastWinDate: pool.lastWonAt || undefined,
-        lastWinAmount: pool.lastWonAmount || undefined,
-        seedAmount: pool.seedAmount || 0,
-        maxAmount: pool.maxAmount || undefined,
-        contributionRate: pool.contributionRate || 0,
-        lastWonByUserId: pool.lastWonByUserId || undefined,
-      };
-    } catch (error) {
-      console.error(`Failed to get jackpot pool for ${group}:`, error);
-      throw new Error(`Failed to retrieve jackpot pool for group: ${group}`);
-    }
-  }
-
-  /**
-   * Get all jackpot pools
-   */
-  async getAllPools(): Promise<Record<JackpotGroup, JackpotPool>> {
-    await this.ensureInitialized();
-
-    try {
-      const pools = await db
-        .select()
-        .from(jackpotTable)
-        .where(
-          sql`${jackpotTable.group} IN (${"minor"}, ${"major"}, ${"mega"})`
-        );
-
-      const result: Record<JackpotGroup, JackpotPool> = {
-        minor: {} as JackpotPool,
-        major: {} as JackpotPool,
-        mega: {} as JackpotPool,
-      };
-
-      for (const pool of pools) {
-        result[pool.group] = {
-          group: pool.group,
-          currentAmount: pool.currentAmount,
-          totalContributions: pool.totalContributions || 0,
-          totalWins: pool.totalWins || 0,
-          lastWinDate: pool.lastWonAt || undefined,
-          lastWinAmount: pool.lastWonAmount || undefined,
-        };
-      }
-
-      return result;
-    } catch (error) {
-      console.error("Failed to get all jackpot pools:", error);
-      throw new Error("Failed to retrieve jackpot pools");
-    }
-  }
-
-  /**
-   * Process jackpot contribution from a bet with concurrency safety
-   */
-  async contribute(
-    gameId: string,
-    wagerAmount: number
-  ): Promise<JackpotContributionResult> {
-    // Validate inputs first
-    const validation = validateJackpotContributionRequest({
-      gameId,
-      wagerAmount,
-    });
-    if (!validation.success) {
-      return {
-        success: false,
-        contributions: { minor: 0, major: 0, mega: 0 },
-        totalContribution: 0,
-        error: validation.error,
-      };
-    }
-
-    const { gameId: validatedGameId, wagerAmount: validatedWagerAmount } =
-      validation.data!;
-
-    // Determine which jackpot group(s) this game contributes to
-    const gameJackpotGroups = this.getGameJackpotGroups(validatedGameId);
-
-    if (gameJackpotGroups.length === 0) {
-      return {
-        success: true,
-        contributions: { minor: 0, major: 0, mega: 0 },
-        totalContribution: 0,
-      };
-    }
-
-    const contributions: Record<JackpotGroup, number> = {
-      minor: 0,
-      major: 0,
-      mega: 0,
-    };
-
-    let totalContribution = 0;
-
-    try {
-      // Use optimistic locking for batch update
-      const result = await ConcurrencySafeDB.batchOptimisticUpdate(
-        "contribute",
-        gameJackpotGroups,
-        async (pools, tx) => {
-          const contributions: Record<JackpotGroup, number> = {
-            minor: 0,
-            major: 0,
-            mega: 0,
-          };
-
-          let totalContribution = 0;
-
-          for (const pool of pools) {
-            const group = pool.group as JackpotGroup;
-            const rate = this.config[group].rate || 0;
-            const contribution = Math.floor(validatedWagerAmount * rate);
-
-            if (contribution > 0) {
-              contributions[group] = contribution;
-              totalContribution += contribution;
-
-              const maxAmount = this.config[group].maxAmount;
-              let actualContribution = contribution;
-
-              // Check if adding contribution would exceed max
-              if (maxAmount && pool.currentAmount + contribution > maxAmount) {
-                // Cap at maximum
-                actualContribution = maxAmount - pool.currentAmount;
-              }
-
-              if (actualContribution > 0) {
-                // Update pool atomically
-                await tx
-                  .update(jackpotTable)
-                  .set({
-                    currentAmount: sql`current_amount + ${actualContribution}`,
-                    totalContributions: sql`total_contributions + ${actualContribution}`,
-                    version: sql`version + 1`, // Increment version for optimistic locking
-                    updatedAt: new Date(),
-                  })
-                  .where(eq(jackpotTable.group, group));
-
-                // Log contribution to history
-                const contributionRecord: JackpotContributionRecord = {
-                  wagerAmount: validatedWagerAmount,
-                  contributionAmount: actualContribution,
-                  winAmount: 0,
-                  betTransactionId: `bet_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                  jackpotId: pool.id,
-                  createdAt: new Date(),
-                  operatorId: "system",
-                };
-
-                await tx
-                  .update(jackpotTable)
-                  .set({
-                    contributionHistory: sql`contribution_history || ${JSON.stringify([contributionRecord])}`,
-                  })
-                  .where(eq(jackpotTable.group, group));
-              }
-            }
-          }
-
-          return { contributions, totalContribution };
-        }
-      );
-
-      if (!result.success) {
-        return {
-          success: false,
-          contributions: { minor: 0, major: 0, mega: 0 },
-          totalContribution: 0,
-          error: result.error,
-        };
-      }
-
-      return {
-        success: true,
-        contributions: result.data!.contributions,
-        totalContribution: result.data!.totalContribution,
-      };
-    } catch (error) {
-      console.error("Failed to process jackpot contribution:", error);
-      return {
-        success: false,
-        contributions: { minor: 0, major: 0, mega: 0 },
-        totalContribution: 0,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to process jackpot contribution",
-      };
-    }
-  }
-
-  /**
-   * Process jackpot win with concurrency safety
-   */
-  async processWin(
-    group: JackpotGroup,
-    gameId: string,
-    userId: string,
-    winAmount?: number
-  ): Promise<JackpotWinResult> {
-    // Validate inputs first
-    const winRequest = { group, gameId, userId, winAmount };
-    const validation = validateJackpotWinRequest(winRequest);
-    if (!validation.success) {
-      return {
-        success: false,
-        actualWinAmount: 0,
-        error: validation.error,
-      };
-    }
-
-    const {
-      group: validatedGroup,
-      gameId: validatedGameId,
-      userId: validatedUserId,
-      winAmount: validatedWinAmount,
-    } = validation.data!;
-
-    try {
-      // Use pessimistic locking for win processing (critical operation)
-      const result = await ConcurrencySafeDB.pessimisticUpdate(
-        "processWin",
-        validatedGroup,
-        async (pool, tx) => {
-          // Use provided win amount or current pool amount
-          const actualWinAmount = validatedWinAmount || pool.currentAmount;
-
-          if (actualWinAmount <= 0) {
-            throw new Error("Invalid win amount");
-          }
-
-          if (actualWinAmount > pool.currentAmount) {
-            throw new Error("Win amount exceeds available jackpot amount");
-          }
-
-          // Calculate new amount (reset to seed if would go negative)
-          const newAmount = pool.currentAmount - actualWinAmount;
-          const resetAmount =
-            newAmount < 0 ? this.config[validatedGroup].seedAmount : newAmount;
-
-          // Update pool atomically
-          await tx
-            .update(jackpotTable)
-            .set({
-              currentAmount: resetAmount,
-              totalWins: sql`total_wins + ${actualWinAmount}`,
-              lastWonAmount: actualWinAmount,
-              lastWonAt: new Date(),
-              lastWonByUserId: validatedUserId,
-              version: sql`version + 1`, // Increment version for optimistic locking
-              updatedAt: new Date(),
-            })
-            .where(eq(jackpotTable.group, validatedGroup));
-
-          // Log win to history with proper typing
-          const winRecord: JackpotWinRecord = {
-            userId: validatedUserId,
-            gameId: validatedGameId,
-            amountWon: actualWinAmount,
-            winningSpinTransactionId: `win_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            timeStampOfWin: new Date(),
-            numberOfJackpotWinsForUserBefore: 0, // Would need to query user history
-            numberOfJackpotWinsForUserAfter: 1, // Would need to query user history
-            operatorId: "system",
-            userCreateDate: new Date(), // Would need to get from user table
-            videoClipLocation: "", // Optional for future use
-          };
-
-          await tx
-            .update(jackpotTable)
-            .set({
-              winHistory: sql`jackpot_wins || ${JSON.stringify([winRecord])}`,
-            })
-            .where(eq(jackpotTable.group, validatedGroup));
-
-          console.log(
-            `Jackpot win processed: ${validatedGroup} - ${actualWinAmount} cents to user ${validatedUserId}`
-          );
-
-          return {
-            actualWinAmount,
-            remainingAmount: resetAmount,
-          };
-        }
-      );
-
-      if (!result.success) {
-        return {
-          success: false,
-          actualWinAmount: 0,
-          error: result.error,
-        };
-      }
-
-      return {
-        success: true,
-        actualWinAmount: result.data!.actualWinAmount,
-        remainingAmount: result.data!.remainingAmount,
-      };
-    } catch (error) {
-      console.error(
-        `Failed to process jackpot win for ${validatedGroup}:`,
-        error
-      );
-      return {
-        success: false,
-        actualWinAmount: 0,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
-  }
-
-  /**
-   * Get jackpot groups for a specific game (admin-configurable)
-   */
-  getGameJackpotGroups(_gameId: string): JackpotGroup[] {
-    // This should be configurable per game by admin
-    // For now, using a simple mapping based on game type/category
-    // In production, this should come from a game_jackpot_groups table
-
-    // This is a placeholder - in reality, you'd query a game configuration
-    // For now, returning minor for all games
-    return ["minor"];
-  }
-
-  /**
-   * Get recent contributions for a game (from database history)
-   */
-  async getGameContributions(
-    gameId: string,
-    limit: number = 10
-  ): Promise<JackpotContribution[]> {
-    await this.ensureInitialized();
-
-    try {
-      // This would need to be implemented with proper history queries
-      // For now, returning empty array as contribution history is stored per pool
-      return [];
-    } catch (error) {
-      console.error("Failed to get game contributions:", error);
-      return [];
-    }
-  }
-
-  /**
-   * Get statistics for all jackpot groups
-   */
-  async getStatistics(): Promise<{
-    pools: Record<JackpotGroup, JackpotPool>;
-    totalContributions: number;
-    totalWins: number;
-    totalGamesContributing: number;
-  }> {
-    const pools = await this.getAllPools();
-    const totalContributions = Object.values(pools).reduce(
-      (sum, pool) => sum + pool.totalContributions,
-      0
-    );
-    const totalWins = Object.values(pools).reduce(
-      (sum, pool) => sum + pool.totalWins,
-      0
-    );
-
-    // Note: totalGamesContributing would need proper tracking
-    // For now, using a placeholder calculation
-    const totalGamesContributing = 1;
-
-    return {
-      pools,
-      totalContributions,
-      totalWins,
-      totalGamesContributing,
-    };
-  }
+	private config: JackpotConfig;
+	private initialized: boolean = false;
+
+	constructor() {
+		const settings = configurationManager.getConfiguration();
+		this.config = settings.jackpotConfig as any;
+	}
+
+	/**
+	 * Ensure jackpot pools are initialized in database
+	 * @throws {SystemError}
+	 */
+	private async ensureInitialized(): Promise<void> {
+		if (this.initialized) {
+			return;
+		}
+		const context = createOperationContext({ operation: "ensureInitialized" });
+
+		try {
+			await db.transaction(async (tx) => {
+				const existingPools = await tx
+					.select()
+					.from(jackpotTable)
+					.where(sql`${jackpotTable.jackpotType} IN ('MINOR', 'MAJOR', 'GRAND')`);
+
+				const existingTypes = new Set(existingPools.map((pool) => pool.jackpotType));
+
+				// Use lowercase for iteration, map to uppercase for DB
+				const configKeys = ["minor", "major", "mega"] as const;
+				const defaultConfig = getDefaultJackpotConfig();
+
+				for (const typeKey of configKeys) {
+					// --- REFACTORED: Map lowercase key to uppercase enum ---
+					const dbEnumTypeValue = typeKey === "mega" ? "GRAND" : (typeKey.toUpperCase() as "MINOR" | "MAJOR");
+
+					if (existingTypes.has(dbEnumTypeValue)) {
+						continue; // Already exists
+					}
+
+					const typeConfig = defaultConfig[typeKey];
+
+					if (!typeConfig) {
+						throw createSystemError(`Missing default config for type: ${typeKey}`, "CONFIG_MISSING_GROUP", context);
+					}
+
+					const { seedAmount, maxAmount, contributionRate } = typeConfig;
+
+					await tx.insert(jackpotTable).values({
+						jackpotType: dbEnumTypeValue,
+						currentAmount: seedAmount,
+						seedAmount: seedAmount,
+						maxAmount: maxAmount || null,
+						contributionRate: contributionRate,
+						minBet: null,
+						lastWonAmount: null,
+						lastWonAt: null,
+						lastWonByUserId: null,
+						totalContributions: 0,
+						totalWins: 0,
+						createdAt: new Date(),
+						updatedAt: new Date(),
+					});
+				}
+			});
+
+			this.initialized = true;
+			jackpotLogger.info("Jackpot pools initialized successfully", context);
+		} catch (error) {
+			throw categorizeError(error as Error, context, "SYSTEM");
+		}
+	}
+
+	/**
+	 * Get current jackpot configuration
+	 */
+	getConfig(): JackpotConfig {
+		return { ...this.config };
+	}
+
+	/**
+	 * Update jackpot configuration (admin function)
+	 * @throws {ValidationError}
+	 * @throws {DatabaseError}
+	 * @throws {ConcurrencyError}
+	 */
+	async updateConfig(
+		newConfig: Partial<JackpotConfig>,
+		adminContext: Partial<JackpotErrorContext> = {},
+	): Promise<void> {
+		const context = createOperationContext({
+			operation: "updateConfig",
+			...adminContext,
+		});
+		const validatedConfig = validateJackpotConfigUpdate(newConfig, context);
+
+		this.config = { ...this.config, ...validatedConfig };
+
+		// Config keys are lowercase, map to uppercase DB types
+		const affectedConfigKeys = Object.keys(validatedConfig) as ("minor" | "major" | "mega")[];
+		if (affectedConfigKeys.length === 0) return;
+
+		// --- REFACTORED: Map to DB enum types ---
+		const affectedDbTypes = affectedConfigKeys.map((key) =>
+			key === "mega" ? "GRAND" : (key.toUpperCase() as "MINOR" | "MAJOR"),
+		);
+
+		await ConcurrencySafeDB.batchOptimisticUpdate(
+			"updateConfig",
+			affectedDbTypes,
+			async (pools, tx) => {
+				for (const pool of pools) {
+					const type = pool.jackpotType as JackpotType;
+					// --- REFACTORED: Map DB type back to lowercase config key ---
+					const configKey = type === "GRAND" ? "mega" : (type.toLowerCase() as "minor" | "major");
+					const poolConfig = validatedConfig[configKey];
+
+					if (!poolConfig) continue;
+
+					const updateData: any = {
+						updatedAt: new Date(),
+						version: sql`version + 1`,
+					};
+
+					if (poolConfig.seedAmount !== undefined) updateData.seedAmount = poolConfig.seedAmount;
+					if (poolConfig.maxAmount !== undefined) updateData.maxAmount = poolConfig.maxAmount;
+					if (poolConfig.rate !== undefined) updateData.contributionRate = poolConfig.rate;
+
+					await tx.update(jackpotTable).set(updateData).where(eq(jackpotTable.jackpotType, type));
+				}
+			},
+			context,
+		);
+		jackpotLogger.config("Jackpot configuration updated", context, {
+			affectedTypes: affectedDbTypes,
+		});
+	}
+
+	/**
+	 * Get current jackpot pool for a type
+	 * @throws {DatabaseError}
+	 */
+	async getPool(type: JackpotType): Promise<JackpotPool> {
+		await this.ensureInitialized();
+		const context = createOperationContext({ operation: "getPool", type });
+
+		try {
+			const pools = await db.select().from(jackpotTable).where(eq(jackpotTable.jackpotType, type));
+
+			const pool = pools[0];
+			if (!pool) {
+				throw createSystemError(`Jackpot pool not found for type: ${type}`, "SYSTEM_UNEXPECTED_STATE", context);
+			}
+			// --- REFACTORED: Cast to JackpotPool, which now expects uppercase type ---
+			return pool as unknown as JackpotPool;
+		} catch (error) {
+			throw categorizeError(error as Error, context, "DATABASE");
+		}
+	}
+
+	/**
+	 * Get all jackpot pools
+	 * @throws {DatabaseError}
+	 */
+	async getAllPools(): Promise<Record<JackpotType, JackpotPool>> {
+		await this.ensureInitialized();
+		const context = createOperationContext({ operation: "getAllPools" });
+
+		try {
+			const pools = await db
+				.select()
+				.from(jackpotTable)
+				.where(sql`${jackpotTable.jackpotType} IN ('MINOR', 'MAJOR', 'GRAND')`);
+
+			const result: Record<JackpotType, JackpotPool> = {} as any;
+			for (const pool of pools) {
+				// --- REFACTORED: Cast to JackpotPool, which now expects uppercase type ---
+				result[pool.jackpotType] = pool as unknown as JackpotPool;
+			}
+			return result;
+		} catch (error) {
+			throw categorizeError(error as Error, context, "DATABASE");
+		}
+	}
+
+	/**
+	 * Process jackpot contribution from a bet
+	 * @throws {ValidationError}
+	 * @throws {DatabaseError}
+	 * @throws {ConcurrencyError}
+	 */
+	async contribute(
+		gameId: string,
+		wagerAmount: number,
+	): Promise<{
+		contributions: Record<JackpotType, number>;
+		totalContribution: number;
+	}> {
+		const context = createOperationContext({ operation: "contribute", gameId });
+		const { gameId: validatedGameId, wagerAmount: validatedWagerAmount } = validateJackpotContributionRequest(
+			{ gameId, wagerAmount },
+			context,
+		);
+
+		const gameJackpotTypes = this.getGameJackpotTypes(validatedGameId);
+		if (gameJackpotTypes.length === 0) {
+			return {
+				contributions: { MINOR: 0, MAJOR: 0, GRAND: 0 },
+				totalContribution: 0,
+			};
+		}
+
+		const result = await ConcurrencySafeDB.batchOptimisticUpdate(
+			"contribute",
+			gameJackpotTypes,
+			async (pools, tx) => {
+				// --- REFACTORED: Use uppercase enum values ---
+				const contributions: Record<JackpotType, number> = {
+					MINOR: 0,
+					MAJOR: 0,
+					GRAND: 0,
+				};
+				let totalContribution = 0;
+
+				for (const pool of pools) {
+					const type = pool.jackpotType as JackpotType;
+					// --- REFACTORED: Map uppercase DB type to lowercase config key ---
+					const configKey = type === "GRAND" ? "mega" : (type.toLowerCase() as "minor" | "major");
+					const rate = this.config[configKey].rate || 0;
+					const contribution = Math.floor(validatedWagerAmount * rate);
+
+					if (contribution > 0) {
+						const maxAmount = this.config[configKey].maxAmount;
+						let actualContribution = contribution;
+
+						if (maxAmount && pool.currentAmount + contribution > maxAmount) {
+							actualContribution = Math.max(0, maxAmount - pool.currentAmount);
+						}
+
+						if (actualContribution > 0) {
+							contributions[type] = actualContribution;
+							totalContribution += actualContribution;
+
+							await tx
+								.update(jackpotTable)
+								.set({
+									currentAmount: sql`current_amount + ${actualContribution}`,
+									totalContributions: sql`total_contributions + ${actualContribution}`,
+									version: sql`version + 1`,
+									updatedAt: new Date(),
+								})
+								.where(eq(jackpotTable.jackpotType, type));
+
+							const contributionRecord: Omit<JackpotContributionHistory, "id"> = {
+								jackpotId: pool.id,
+								jackpotType: type,
+								wagerAmount: validatedWagerAmount,
+								contributionAmount: actualContribution,
+								winAmount: 0,
+								betTransactionId: `bet_${context.operationId}`,
+								gameId: validatedGameId,
+								operatorId: "system",
+								createdAt: new Date(),
+							};
+							await tx.insert(jackpotContributionHistoryTable).values(contributionRecord);
+						}
+					}
+				}
+				return { contributions, totalContribution };
+			},
+			context,
+		);
+
+		return result.data;
+	}
+
+	/**
+	 * Process jackpot win
+	 * @throws {ValidationError}
+	 * @throws {InsufficientFundsError}
+	 * @throws {DatabaseError}
+	 * @throws {ConcurrencyError}
+	 */
+	async processWin(
+		type: JackpotType,
+		gameId: string,
+		userId: string,
+		winAmount?: number,
+	): Promise<{ actualWinAmount: number; remainingAmount: number }> {
+		const context = createOperationContext({
+			operation: "processWin",
+			type,
+			gameId,
+			userId,
+		});
+		const {
+			type: validatedType,
+			gameId: validatedGameId,
+			userId: validatedUserId,
+			winAmount: validatedWinAmount,
+		} = validateJackpotWinRequest({ type, gameId, userId, winAmount }, context);
+
+		const result = await ConcurrencySafeDB.pessimisticUpdate(
+			"processWin",
+			validatedType,
+			async (pool, tx) => {
+				const actualWinAmount = validatedWinAmount || pool.currentAmount;
+
+				if (actualWinAmount <= 0) {
+					throw createValidationError("Invalid win amount", "VALIDATION_INVALID_AMOUNT", context);
+				}
+
+				if (actualWinAmount > pool.currentAmount) {
+					throw createInsufficientFundsError(
+						`Win amount ${actualWinAmount} exceeds available jackpot ${pool.currentAmount}`,
+						"INSUFFICIENT_JACKPOT_FUNDS",
+						context,
+					);
+				}
+
+				const newAmount = pool.currentAmount - actualWinAmount;
+				const resetAmount = newAmount < (pool.seedAmount || 0) ? pool.seedAmount || 0 : newAmount;
+
+				await tx
+					.update(jackpotTable)
+					.set({
+						currentAmount: resetAmount,
+						totalWins: sql`total_wins + ${actualWinAmount}`,
+						lastWonAmount: actualWinAmount,
+						lastWonAt: new Date(),
+						lastWonByUserId: validatedUserId,
+						version: sql`version + 1`,
+						updatedAt: new Date(),
+					})
+					.where(eq(jackpotTable.jackpotType, validatedType));
+
+				const winRecord: Omit<JackpotWinHistory, "id" | "createdAt"> = {
+					jackpotId: pool.id,
+					jackpotType: validatedType,
+					userId: validatedUserId,
+					gameId: validatedGameId,
+					amountWon: actualWinAmount,
+					winningSpinTransactionId: `win_${context.operationId}`,
+					timeStampOfWin: new Date(),
+					numberOfJackpotWinsForUserBefore: 0, // TODO: Query user's win count
+					numberOfJackpotWinsForUserAfter: 1, // TODO: Query user's win count + 1
+					operatorId: "system",
+					userCreateDate: null, // TODO: Query user's creation date
+					videoClipLocation: "",
+				};
+				await tx.insert(jackpotWinHistoryTable).values(winRecord);
+
+				jackpotLogger.info(`Jackpot win processed: ${validatedType} - ${actualWinAmount} cents`, context);
+
+				return {
+					actualWinAmount,
+					remainingAmount: resetAmount,
+				};
+			},
+			context,
+		);
+
+		return result.data;
+	}
+
+	/**
+	 * Get jackpot types for a specific game (admin-configurable)
+	 */
+	// --- REFACTORED: Returns uppercase enum values ---
+	getGameJackpotTypes(_gameId: string): JackpotType[] {
+		return ["MINOR"];
+	}
+
+	/**
+	 * Get statistics for all jackpot types
+	 * @throws {DatabaseError}
+	 */
+	async getStatistics(): Promise<{
+		pools: Record<JackpotType, JackpotPool>;
+		totalContributions: number;
+		totalWins: number;
+		totalGamesContributing: number;
+	}> {
+		const pools = await this.getAllPools();
+		const totalContributions = Object.values(pools).reduce((sum, pool) => sum + (pool.totalContributions || 0), 0);
+		const totalWins = Object.values(pools).reduce((sum, pool) => sum + (pool.totalWins || 0), 0);
+		const totalGamesContributing = 1;
+
+		return {
+			pools,
+			totalContributions,
+			totalWins,
+			totalGamesContributing,
+		};
+	}
 }
 
-// Global jackpot manager instance
+// ========================================
+// PUBLIC API (SINGLETON INSTANCE)
+// ========================================
+
 export const jackpotManager = new JackpotManager();
 
 /**
  * Process jackpot contribution for a bet
  */
 export async function processJackpotContribution(
-  gameId: string,
-  wagerAmount: number
+	gameId: string,
+	wagerAmount: number,
 ): Promise<JackpotContributionResult> {
-  return jackpotManager.contribute(gameId, wagerAmount);
+	const context = createOperationContext({
+		operation: "processJackpotContribution",
+		gameId,
+	});
+	try {
+		const result = await jackpotManager.contribute(gameId, wagerAmount);
+		return {
+			success: true,
+			...result,
+		};
+	} catch (error) {
+		const jackpotError = categorizeError(error as Error, context);
+		jackpotLogger.error("Failed to process jackpot contribution", context, jackpotError);
+		return {
+			success: false,
+			// --- REFACTORED: Use uppercase enum keys ---
+			contributions: { MINOR: 0, MAJOR: 0, GRAND: 0 },
+			totalContribution: 0,
+			error: jackpotError.message,
+		};
+	}
 }
 
 /**
  * Process jackpot win
  */
 export async function processJackpotWin(
-  group: JackpotGroup,
-  gameId: string,
-  userId: string,
-  winAmount?: number
+	// --- REFACTORED: type is now uppercase enum ---
+	type: JackpotType,
+	gameId: string,
+	userId: string,
+	winAmount?: number,
 ): Promise<JackpotWinResult> {
-  return jackpotManager.processWin(group, gameId, userId, winAmount);
+	const context = createOperationContext({
+		operation: "processJackpotWin",
+		type,
+		gameId,
+		userId,
+	});
+	try {
+		const result = await jackpotManager.processWin(type, gameId, userId, winAmount);
+		return {
+			success: true,
+			...result,
+		};
+	} catch (error) {
+		const jackpotError = categorizeError(error as Error, context);
+		jackpotLogger.error("Failed to process jackpot win", context, jackpotError);
+		return {
+			success: false,
+			actualWinAmount: 0,
+			error: jackpotError.message,
+		};
+	}
 }
 
 /**
  * Get current jackpot pools
  */
-export async function getJackpotPools(): Promise<
-  Record<JackpotGroup, JackpotPool>
-> {
-  return jackpotManager.getAllPools();
+export async function getJackpotPools(): Promise<Record<JackpotType, JackpotPool>> {
+	try {
+		return await jackpotManager.getAllPools();
+	} catch (error) {
+		jackpotLogger.error("Failed to get all jackpot pools", createOperationContext({}), error);
+		return {
+			MINOR: {} as JackpotPool,
+			MAJOR: {} as JackpotPool,
+			GRAND: {} as JackpotPool,
+		};
+	}
 }
 
 /**
- * Get jackpot pool for specific group
+ * Get jackpot pool for specific type
  */
-export async function getJackpotPool(
-  group: JackpotGroup
-): Promise<JackpotPool> {
-  return jackpotManager.getPool(group);
+export async function getJackpotPool(type: JackpotType): Promise<JackpotPool> {
+	try {
+		return await jackpotManager.getPool(type);
+	} catch (error) {
+		jackpotLogger.error(`Failed to get jackpot pool: ${type}`, createOperationContext({ type }), error);
+		throw error;
+	}
 }
 
 /**
  * Update jackpot configuration (admin function)
  */
 export async function updateJackpotConfig(
-  config: Partial<JackpotConfig>
+	config: Partial<JackpotConfig>,
 ): Promise<{ success: boolean; error?: string }> {
-  return jackpotManager.updateConfig(config);
+	const context = createOperationContext({ operation: "updateJackpotConfig" });
+	try {
+		await jackpotManager.updateConfig(config, context);
+		return { success: true };
+	} catch (error) {
+		const jackpotError = categorizeError(error as Error, context);
+		jackpotLogger.error("Failed to update jackpot config", context, jackpotError);
+		return {
+			success: false,
+			error: jackpotError.message,
+		};
+	}
 }
 
 /**
  * Get jackpot statistics
  */
 export async function getJackpotStatistics() {
-  return jackpotManager.getStatistics();
+	try {
+		return await jackpotManager.getStatistics();
+	} catch (error) {
+		jackpotLogger.error("Failed to get jackpot statistics", createOperationContext({}), error);
+		return {
+			pools: {},
+			totalContributions: 0,
+			totalWins: 0,
+			totalGamesContributing: 0,
+		};
+	}
 }
 
 /**
  * Check if game contributes to any jackpot
  */
-export async function doesGameHaveJackpot(gameId: string): Promise<boolean> {
-  const groups = jackpotManager.getGameJackpotGroups(gameId);
-  return groups.length > 0;
+export function doesGameHaveJackpot(gameId: string): boolean {
+	const types = jackpotManager.getGameJackpotTypes(gameId);
+	return types.length > 0;
 }
 
 /**
- * Get contribution rate for a specific game and jackpot group
+ * Get contribution rate for a specific game and jackpot type
  */
-export async function getGameContributionRate(
-  gameId: string,
-  group: JackpotGroup
-): Promise<number> {
-  const groups = jackpotManager.getGameJackpotGroups(gameId);
-  return groups.includes(group)
-    ? jackpotManager.getConfig()[group].rate || 0
-    : 0;
+export function getGameContributionRate(gameId: string, type: JackpotType): number {
+	const types = jackpotManager.getGameJackpotTypes(gameId);
+	// --- REFACTORED: Map uppercase DB type to lowercase config key ---
+	const configKey = type === "GRAND" ? "mega" : (type.toLowerCase() as "minor" | "major");
+	return types.includes(type) ? jackpotManager.getConfig()[configKey].rate || 0 : 0;
 }

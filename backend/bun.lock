@@ -12,6 +12,7 @@
         "@ngneat/falso": "^8.0.2",
         "@supabase/ssr": "^0.7.0",
         "@supabase/supabase-js": "^2.76.1",
+        "bun-redis": "^0.0.1",
         "bun-ws-router": "^0.6.1",
         "dotenv": "^17.2.3",
         "drizzle-cuid2": "^2.1.0",
@@ -269,6 +270,8 @@
     "buffer-equal-constant-time": ["buffer-equal-constant-time@1.0.1", "", {}, "sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA=="],
 
     "buffer-from": ["buffer-from@1.1.2", "", {}, "sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ=="],
+
+    "bun-redis": ["bun-redis@0.0.1", "", {}, "sha512-QlJbf5PZnSZ2MMsxB64w+pw37LaPM9HjPjN6CTqd9fw8nszrImD7fh6TSYpvVv8kjaICgWp+ZQkdlWebdjC51g=="],
 
     "bun-types": ["bun-types@1.3.1", "", { "dependencies": { "@types/node": "*" }, "peerDependencies": { "@types/react": "^19" } }, "sha512-NMrcy7smratanWJ2mMXdpatalovtxVggkj11bScuWuiOoXTiKIu2eVS1/7qbyI/4yHedtsn175n4Sm4JcdHLXw=="],
 

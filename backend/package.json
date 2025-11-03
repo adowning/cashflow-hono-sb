@@ -37,6 +37,7 @@
     "@ngneat/falso": "^8.0.2",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.76.1",
+    "bun-redis": "^0.0.1",
     "bun-ws-router": "^0.6.1",
     "dotenv": "^17.2.3",
     "drizzle-cuid2": "^2.1.0",

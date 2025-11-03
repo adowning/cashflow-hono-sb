@@ -2,28 +2,23 @@ import type { PinoLogger } from "hono-pino";
 
 import { z } from "zod";
 
-import { type User, type UserBalance } from "@/core/database/schema";
+import type { User, UserBalance } from "@/core/database/schema";
 import { SupabaseClient, type User as AuthUser } from "@supabase/supabase-js";
-import type { BunSQLDatabase } from "drizzle-orm/bun-sql";
 import type { AppType } from "../app";
+import type { UserWithBalance } from "@/core/database/db";
+import type { RedisClient } from "bun";
 // import { CourseTagSchema } from "../prisma/generated/types";
 
-export type UserWithBalance = User & {
-  balance: UserBalance
-}
-export interface AppBindings
-{
+export interface AppBindings {
   // Variables: {
   logger: PinoLogger;
   user: UserWithBalance;
   authUser: AuthUser;
-  sessionCache: BunSQLDatabase;
-  gameSessionCache: BunSQLDatabase;
+  sessionCache: RedisClient;
+  gameSessionCache: RedisClient;
   supabase: SupabaseClient;
   // };
 }
-
-
 
 export { type AppType };
 
@@ -44,8 +39,7 @@ export type TGetUserType = z.infer<typeof ZGetUserSchema>;
 export type TGetAllUsersType = z.infer<typeof ZGetAllUsersSchema>;
 
 // Pagination interfaces and types
-export interface PaginationMeta
-{
+export interface PaginationMeta {
   page: number;
   perPage: number;
   total: number;
@@ -54,14 +48,12 @@ export interface PaginationMeta
   hasPrevPage: boolean;
 }
 
-export interface PaginatedResponse<T>
-{
+export interface PaginatedResponse<T> {
   data: T[];
   pagination: PaginationMeta;
 }
 
-export interface PaginationParams
-{
+export interface PaginationParams {
   page?: number;
   perPage?: number;
 }

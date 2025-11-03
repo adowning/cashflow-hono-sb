@@ -1,6 +1,5 @@
 /** biome-ignore-all lint/suspicious/noExplicitAny: <> */
-import
-{
+import {
   type BetRequest,
   type GameOutcome,
   executeCoreBet,
@@ -12,14 +11,14 @@ import { onBetCompleted as onNotification } from "../listeners/bet-notification.
 import { onBetCompleted as onStats } from "../listeners/bet-stats.updater";
 import { onBetCompleted as onTransaction } from "../listeners/bet-transaction.logger";
 import { onBetCompleted as onVIP } from "../listeners/bet-vip.processor";
+import { gameplayLogger, type LogContext } from "../gameplay-logging.service";
 
 /**
  * Bet processing orchestration service
  * Coordinates all systems for complete bet processing following PRD
  */
 
-export interface BetOutcome
-{
+export interface BetOutcome {
   userId: string;
   gameId: string;
   wagerAmount: number;
@@ -47,8 +46,7 @@ export interface BetOutcome
 export async function processBet(
   betRequest: BetRequest,
   gameOutcome: GameOutcome
-): Promise<BetOutcome>
-{
+): Promise<BetOutcome> {
   const startTime = Date.now();
 
   try {
@@ -66,11 +64,15 @@ export async function processBet(
       onVIP(payload),
     ];
 
-    const [ggrResult, jackpotResult, vipResult] = await Promise.allSettled(sideEffectPromises);
+    const [ggrResult, jackpotResult, vipResult] =
+      await Promise.allSettled(sideEffectPromises);
 
-    const ggrContribution = ggrResult.status === 'fulfilled' ? ggrResult.value : 0;
-    const jackpotContribution = jackpotResult.status === 'fulfilled' ? jackpotResult.value : 0;
-    const vipPointsAdded = vipResult.status === 'fulfilled' ? vipResult.value : 0;
+    const ggrContribution =
+      ggrResult.status === "fulfilled" ? ggrResult.value : 0;
+    const jackpotContribution =
+      jackpotResult.status === "fulfilled" ? jackpotResult.value : 0;
+    const vipPointsAdded =
+      vipResult.status === "fulfilled" ? vipResult.value : 0;
 
     const transactionPayload = {
       ...payload,
@@ -80,12 +82,10 @@ export async function processBet(
       processingTime: Date.now() - startTime,
     };
 
-    const listeners = [
-      onNotification,
-      onStats,
-      onTransaction,
-    ];
-    Promise.allSettled(listeners.map((listener) => listener(transactionPayload)));
+    const listeners = [onNotification, onStats, onTransaction];
+    Promise.allSettled(
+      listeners.map((listener) => listener(transactionPayload))
+    );
 
     // Return success response immediately
     return {
@@ -94,7 +94,8 @@ export async function processBet(
       wagerAmount: coreBetResult.wagerAmount,
       winAmount: coreBetResult.winAmount,
       balanceType: coreBetResult.balanceType,
-      newBalance: coreBetResult.realBalanceAfter + coreBetResult.bonusBalanceAfter,
+      newBalance:
+        coreBetResult.realBalanceAfter + coreBetResult.bonusBalanceAfter,
       jackpotContribution,
       vipPointsEarned: vipPointsAdded,
       ggrContribution,
@@ -102,10 +103,9 @@ export async function processBet(
       transactionId: undefined, // This is now handled by the transaction logger
       time: Date.now() - startTime,
     };
-
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    console.error("Bet processing failed:", error);
+    gameplayLogger.error("Bet processing failed:", error as LogContext);
 
     // Send error notification to user
     await notifyError(
@@ -136,7 +136,6 @@ export async function processBet(
 export async function processBetOutcome(
   betRequest: BetRequest,
   gameOutcome: GameOutcome
-): Promise<BetOutcome>
-{
+): Promise<BetOutcome> {
   return processBet(betRequest, gameOutcome);
 }

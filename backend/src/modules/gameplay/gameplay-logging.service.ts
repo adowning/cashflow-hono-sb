@@ -1,10 +1,9 @@
 /**
- * Structured logging service for jackpot operations
+ * Structured logging service for gameplay operations
  * Provides comprehensive audit trails, performance monitoring, and correlation tracking
  */
 
-import type { jackpotTypeEnum } from "@/core/database/schema";
-import { JackpotError, getErrorSeverity } from "./jackpot-errors";
+import { GameplayError, getErrorSeverity } from "./gameplay-errors";
 
 // ========================================
 // LOG TYPES AND INTERFACES
@@ -17,7 +16,6 @@ export interface LogContext {
 	correlationId?: string;
 	userId?: string;
 	gameId?: string;
-	group?: typeof jackpotTypeEnum;
 	requestId?: string;
 	sessionId?: string;
 	timestamp: Date;
@@ -27,15 +25,14 @@ export interface LogContext {
 	[key: string]: any;
 }
 
-export interface JackpotLogEntry {
+export interface GameplayLogEntry {
 	timestamp: string;
 	level: LogLevel;
 	category: "AUDIT" | "ERROR" | "PERFORMANCE" | "TRANSACTION" | "CONFIG" | "HEALTH";
-	operationId: string;
+	operationId?: string;
 	correlationId?: string;
 	userId?: string;
 	gameId?: string;
-	group?: typeof jackpotTypeEnum;
 	message: string;
 	details?: Record<string, any>;
 	duration?: number;
@@ -75,29 +72,28 @@ export function generateOperationId(): string {
  */
 function createLogEntry(
 	level: LogLevel,
-	category: JackpotLogEntry["category"],
+	category: GameplayLogEntry["category"],
 	message: string,
-	context: LogContext,
+	context?: LogContext,
 	details?: Record<string, any>,
 	error?: any,
 	duration?: number,
-): JackpotLogEntry {
-	const entry: JackpotLogEntry = {
+): GameplayLogEntry {
+	const entry: GameplayLogEntry = {
 		timestamp: new Date().toISOString(),
 		level,
 		category,
-		operationId: context.operationId,
-		correlationId: context.correlationId,
-		userId: context.userId,
-		gameId: context.gameId,
-		group: context.group,
+		operationId: context?.operationId,
+		correlationId: context?.correlationId,
+		userId: context?.userId,
+		gameId: context?.gameId,
 		message,
 		details,
 		duration,
 	};
 
 	if (error) {
-		if (error instanceof JackpotError) {
+		if (error instanceof GameplayError) {
 			entry.error = {
 				code: error.code,
 				category: error.category,
@@ -124,14 +120,14 @@ function createLogEntry(
 /**
  * Format log entry as JSON string for structured logging
  */
-function formatAsJson(entry: JackpotLogEntry): string {
+function formatAsJson(entry: GameplayLogEntry): string {
 	return JSON.stringify(entry);
 }
 
 /**
  * Format log entry for console output with colors and formatting
  */
-function formatForConsole(entry: JackpotLogEntry): string {
+function formatForConsole(entry: GameplayLogEntry): string {
 	const timestamp = entry.timestamp;
 	const level = entry.level.padEnd(5);
 	const category = entry.category.padEnd(12);
@@ -147,10 +143,6 @@ function formatForConsole(entry: JackpotLogEntry): string {
 
 	if (entry.userId) {
 		formatted += ` | User: ${entry.userId}`;
-	}
-
-	if (entry.group) {
-		formatted += ` | Group: ${entry.group}`;
 	}
 
 	if (entry.duration !== undefined) {
@@ -172,10 +164,10 @@ function formatForConsole(entry: JackpotLogEntry): string {
 }
 
 // ========================================
-// JACKPOT LOGGING SERVICE
+// GAMEPLAY LOGGING SERVICE
 // ========================================
 
-class JackpotLogger {
+class GameplayLogger {
 	private isDevelopment: boolean;
 	private performanceMetrics: Map<string, number[]> = new Map();
 
@@ -184,7 +176,7 @@ class JackpotLogger {
 	}
 
 	/**
-	 * Log audit entry for jackpot operations
+	 * Log audit entry for gameplay operations
 	 */
 	audit(message: string, context: LogContext, details?: Record<string, any>): void {
 		const entry = createLogEntry("INFO", "AUDIT", message, context, details);
@@ -194,7 +186,7 @@ class JackpotLogger {
 	/**
 	 * Log error with full context and error details
 	 */
-	error(message: string, context: LogContext, error?: any, details?: Record<string, any>): void {
+	error(message: string, context?: LogContext, error?: any, details?: Record<string, any>): void {
 		const entry = createLogEntry("ERROR", "ERROR", message, context, details, error);
 		this.writeLog(entry);
 	}
@@ -310,28 +302,34 @@ class JackpotLogger {
 	}
 
 	/**
-	 * Log jackpot contribution
+	 * Log gameplay contribution
 	 */
-	contribution(
-		action: "CONTRIBUTION" | "WIN" | "RESET",
-		context: LogContext,
-		amount: number,
-		success: boolean = true,
-		details?: Record<string, any>,
-	): void {
-		const contributionDetails = {
-			action,
-			amount,
-			success,
-			poolAmount: details?.poolAmount,
-			totalContributions: details?.totalContributions,
-			...details,
-		};
+	//   contribution(
+	//     action: "CONTRIBUTION" | "WIN" | "RESET",
+	//     context: LogContext,
+	//     amount: number,
+	//     success: boolean = true,
+	//     details?: Record<string, any>
+	//   ): void {
+	//     const contributionDetails = {
+	//       action,
+	//       amount,
+	//       success,
+	//       poolAmount: details?.poolAmount,
+	//       totalContributions: details?.totalContributions,
+	//       ...details,
+	//     };
 
-		const level: LogLevel = success ? "INFO" : "ERROR";
-		const entry = createLogEntry(level, "AUDIT", `Jackpot ${action}: ${amount} cents`, context, contributionDetails);
-		this.writeLog(entry);
-	}
+	//     const level: LogLevel = success ? "INFO" : "ERROR";
+	//     const entry = createLogEntry(
+	//       level,
+	//       "AUDIT",
+	//       `Gameplay ${action}: ${amount} cents`,
+	//       context,
+	//       contributionDetails
+	//     );
+	//     this.writeLog(entry);
+	//   }
 
 	/**
 	 * Log concurrency operation
@@ -360,7 +358,7 @@ class JackpotLogger {
 	/**
 	 * Write log entry to output
 	 */
-	private writeLog(entry: JackpotLogEntry): void {
+	private writeLog(entry: GameplayLogEntry): void {
 		const jsonLog = formatAsJson(entry);
 
 		if (this.isDevelopment) {
@@ -370,7 +368,7 @@ class JackpotLogger {
 			switch (entry.level) {
 				case "ERROR":
 				case "FATAL":
-					console.error(consoleFormatted);
+					gameplayLogger.error(consoleFormatted);
 					break;
 				case "WARN":
 					console.warn(consoleFormatted);
@@ -444,7 +442,7 @@ class JackpotLogger {
 	/**
 	 * Get all performance statistics
 	 */
-	getAllPerformanceStats(): Record<string, ReturnType<JackpotLogger["getPerformanceStats"]>> {
+	getAllPerformanceStats(): Record<string, ReturnType<GameplayLogger["getPerformanceStats"]>> {
 		const stats: Record<string, any> = {};
 
 		for (const [operation] of this.performanceMetrics) {
@@ -463,7 +461,7 @@ class JackpotLogger {
 }
 
 // Export singleton instance
-export const jackpotLogger = new JackpotLogger();
+export const gameplayLogger = new GameplayLogger();
 
 // ========================================
 // PERFORMANCE MONITORING DECORATORS
@@ -489,7 +487,7 @@ export function logPerformance(operation: string, context?: Partial<LogContext>)
 			};
 
 			try {
-				jackpotLogger.info(`Starting ${operation}`, methodContext, {
+				gameplayLogger.info(`Starting ${operation}`, methodContext, {
 					method: propertyKey,
 					args: args.length,
 				});
@@ -497,7 +495,7 @@ export function logPerformance(operation: string, context?: Partial<LogContext>)
 				const result = await originalMethod.apply(this, args);
 				const duration = Date.now() - startTime;
 
-				jackpotLogger.performance(operation, methodContext, duration, {
+				gameplayLogger.performance(operation, methodContext, duration, {
 					method: propertyKey,
 					args: args.length,
 				});
@@ -506,7 +504,7 @@ export function logPerformance(operation: string, context?: Partial<LogContext>)
 			} catch (error) {
 				const duration = Date.now() - startTime;
 
-				jackpotLogger.error(`${operation} failed after ${duration}ms`, methodContext, error, {
+				gameplayLogger.error(`${operation} failed after ${duration}ms`, methodContext, error, {
 					method: propertyKey,
 					args: args.length,
 					duration,
@@ -525,15 +523,14 @@ export function logPerformance(operation: string, context?: Partial<LogContext>)
 // ========================================
 
 /**
- * Log jackpot operation to audit trail
+ * Log gameplay operation to audit trail
  */
-export function logJackpotAudit(
+export function logGameplayAudit(
 	operation: string,
 	context: LogContext,
 	data: {
 		userId?: string;
 		gameId?: string;
-		group?: typeof jackpotTypeEnum;
 		amount?: number;
 		oldValue?: any;
 		newValue?: any;
@@ -547,11 +544,11 @@ export function logJackpotAudit(
 		timestamp: new Date().toISOString(),
 	};
 
-	jackpotLogger.audit(`Jackpot ${operation}`, context, auditDetails);
+	gameplayLogger.audit(`Gameplay ${operation}`, context, auditDetails);
 
 	// Also log to error channel if failed
 	if (!data.success && data.error) {
-		jackpotLogger.error(`Jackpot ${operation} failed`, context, data.error, auditDetails);
+		gameplayLogger.error(`Gameplay ${operation} failed`, context, data.error, auditDetails);
 	}
 }
 
