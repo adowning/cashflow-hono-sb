@@ -12,7 +12,7 @@
  */
 
 import { db } from '@/libs/database/db';
-import { jackpotGroupEnum } from '@/libs/database/schema/enums';
+import { jackpotTypeEnum } from '@/core/database/schema/enums';
 import { jackpotTable } from '@/libs/database/schema/jackpot';
 import { eq, sql } from 'drizzle-orm';
 import fs from 'fs/promises';
@@ -323,7 +323,7 @@ class JackpotMigrationManager
                     await db
                         .insert(jackpotTable)
                         .values({
-                            group: poolData.group as typeof jackpotGroupEnum.enumValues[number],
+                            group: poolData.group as typeof jackpotTypeEnum.enumValues[number],
                             currentAmount: poolData.currentAmount,
                             seedAmount: poolData.seedAmount,
                             maxAmount: poolData.maxAmount,

@@ -5,7 +5,7 @@
 
 import { db } from "@/core/database/db";
 import { transactionLogTable, type TransactionLogInsert, type TransactionLog } from "@/core/database/schema/finance";
-import { logger } from "./logger"; // Assuming this is your shared logger
+import { appLogger, createOperationContext, type LogContext } from "@/core/logger/app-logger";
 import { eq, desc } from "drizzle-orm";
 
 /**
@@ -14,6 +14,12 @@ import { eq, desc } from "drizzle-orm";
  * from listeners and splitting them into correct DB entries.
  */
 export async function logTransaction(payload: any): Promise<void> {
+    const context = createOperationContext({
+        domain: 'transaction',
+        operation: 'logTransaction',
+        userId: payload.userId
+      });
+
 	try {
 		// 1. Create the base database payload from the listener payload
 		const dbPayload: TransactionLogInsert = {
@@ -46,12 +52,10 @@ export async function logTransaction(payload: any): Promise<void> {
 			// Insert the single deposit transaction
 			await db.insert(transactionLogTable).values(dbPayload);
 
-			logger.info({
-				msg: "Transaction logged: DEPOSIT",
-				transactionId: dbPayload.id,
-				userId: dbPayload.userId,
-				amount: dbPayload.wagerAmount,
-			});
+			appLogger.info("Transaction logged: DEPOSIT", context, {
+                transactionId: dbPayload.id,
+                amount: dbPayload.wagerAmount,
+              });
 		} else if (payload.type === "BET") {
 			// This is a BET operation, which might include a WIN.
 			// The schema requires splitting this into two records.
@@ -63,11 +67,9 @@ export async function logTransaction(payload: any): Promise<void> {
 				wagerAmount: payload.wagerAmount || 0,
 			};
 			await db.insert(transactionLogTable).values(betPayload);
-			logger.info({
-				msg: "Transaction logged: BET",
-				userId: betPayload.userId,
-				wager: betPayload.wagerAmount,
-			});
+			appLogger.info("Transaction logged: BET", context, {
+                wager: betPayload.wagerAmount,
+              });
 
 			// --- Record 2: The WIN (Credit), if any ---
 			if (payload.winAmount && payload.winAmount > 0) {
@@ -86,31 +88,24 @@ export async function logTransaction(payload: any): Promise<void> {
 					id: undefined, // Let DB generate a new UUID
 				};
 				await db.insert(transactionLogTable).values(winPayload);
-				logger.info({
-					msg: "Transaction logged: WIN",
-					userId: winPayload.userId,
-					win: winPayload.wagerAmount,
-				});
+				appLogger.info("Transaction logged: WIN", context, {
+                    win: winPayload.wagerAmount,
+                  });
 			}
 		} else {
 			// Handle other types directly if they match schema
 			dbPayload.wagerAmount = payload.wagerAmount || payload.amount || 0;
 			await db.insert(transactionLogTable).values(dbPayload);
 
-			logger.info({
-				msg: "Transaction logged: OTHER",
-				transactionId: dbPayload.id,
-				userId: dbPayload.userId,
-				type: dbPayload.type,
-			});
+			appLogger.info("Transaction logged: OTHER", context, {
+                transactionId: dbPayload.id,
+                type: dbPayload.type,
+              });
 		}
 	} catch (error) {
-		logger.error({
-			msg: "Failed to log transaction to database",
-			payload: payload,
-			error: error instanceof Error ? error.message : "Unknown error",
-			stack: error instanceof Error ? error.stack : undefined,
-		});
+		appLogger.error("Failed to log transaction to database", context, error as Error, {
+            payload
+        });
 		// Do not re-throw, as this is a non-blocking side-effect
 	}
 }
@@ -123,10 +118,13 @@ export async function getTransactionHistory(
 	limit: number = 50,
 	offset: number = 0,
 ): Promise<TransactionLog[]> {
+    const context = createOperationContext({
+        domain: 'transaction',
+        operation: 'getTransactionHistory',
+        userId
+      });
 	try {
-		logger.info({
-			msg: "Getting transaction history",
-			userId,
+		appLogger.info("Getting transaction history", context, {
 			limit,
 			offset,
 		});
@@ -140,12 +138,9 @@ export async function getTransactionHistory(
 
 		return history as TransactionLog[]; // <-- FIX: Add type assertion here
 	} catch (error) {
-		logger.error({
-			msg: "Failed to get transaction history",
-			userId,
+		appLogger.error("Failed to get transaction history", context, error as Error, {
 			limit,
 			offset,
-			error: error instanceof Error ? error.message : error,
 		});
 		throw error;
 	}
